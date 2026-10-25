@@ -1,6 +1,6 @@
 # SAARTHI — Campus Mode
 
-SAARTHI is an AI navigation and reading assistant engineered for blind and low-vision university students. It operates hands-free and offline-first, providing:
+SAARTHI is an AI navigation and reading assistant engineered for blind and low-vision university students. It combines deterministic on-device intelligence (tactile 4-corner UI, Dijkstra accessible routing, calendar computation) with backend Gemma 4 (`gemma-4-26b-a4b-it`) multimodal structuring:
 1. **Campus Reading Pipeline**: Reads timetables, door signs, room numbers, and noticeboards using on-device ML Kit OCR with Google Gemma 4 (`gemma-4-26b-a4b-it`) structuring.
 2. **Deterministic Schedule Intelligence**: Calculates "When is my next class?" and countdowns using strict application calendar code (never LLM guesses).
 3. **Campus Map & Accessible Routing**: Dijkstra shortest path router with an **avoid-stairs** option that refuses to invent accessible routes when only stairs exist.
@@ -72,7 +72,7 @@ Saarthi/
 │   │   │   ├── ai.py            # Confidence & safety disclosures
 │   │   │   └── campus.py        # Timetables, door signs, notices
 │   │   └── services/gemini.py   # Official Google GenAI SDK client
-│   ├── tests/                   # 41 passing automated tests
+│   ├── tests/                   # 43 passing automated tests
 │   ├── .env.example             # Template with Gemma 4 model
 │   └── requirements.txt
 ├── mobile/                      # React Native + Expo SDK 57 mobile client
@@ -253,13 +253,12 @@ pytest -v
 ```
 
 **Results:**
-- `tests/test_config.py` (2 passed)
-- `tests/test_health.py` (4 passed)
-- `tests/test_ai.py` (8 passed)
+- `tests/test_health.py` (5 passed)
+- `tests/test_ai.py` (22 passed)
 - `tests/test_campus_reading.py` (9 passed)
 - `tests/test_csv_to_campus_graph.py` (3 passed)
 - `tests/test_demo_flow.py` (4 passed)
-- **Total: 43 passed, 0 failed in ~2.9s**
+- **Total: 43 passed, 0 failed in ~4.2s**
 
 ### Mobile Automated Test Suite (32 tests)
 
@@ -274,7 +273,7 @@ npm test
 - `src/utils/dateTimeReasoning.test.ts` (10 passed)
 - `src/navigation/campusRouter.test.ts` (13 passed)
 - `src/services/voiceCommands.test.ts` (9 passed)
-- **Total: 32 passed, 0 failed in ~3.5s**
+- **Total: 32 passed, 0 failed in ~9.7s**
 
 ### Mobile Type-Check & Expo Doctor (21/21 passed)
 
@@ -285,8 +284,28 @@ npx expo-doctor
 ```
 
 **Results:**
-- `tsc --noEmit`: 0 errors
+- `tsc --noEmit`: 0 errors (strict TypeScript)
 - `expo-doctor`: 21/21 checks passed (0 issues detected)
+
+### Android Native Debug Build & APK Verification
+
+The native Android project is generated and verified with Gradle assembleDebug:
+
+```powershell
+cd mobile/android
+$env:JAVA_HOME = "D:\Java\jdk-17.0.20.1+1"
+$env:ANDROID_HOME = "D:\Android\Sdk"
+.\gradlew.bat assembleDebug
+```
+
+**Verified Build Artifact:**
+- Gradle Task: `:app:assembleDebug` (`BUILD SUCCESSFUL in 5m 24s`)
+- Output Path: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
+- APK Size: `80,670,173 bytes` (~76.9 MB)
+- Package / App ID: `com.saarthi.assistant`
+- Target Architecture: `arm64-v8a`
+- SDK Versions: `minSdkVersion 24`, `targetSdkVersion 36`
+- Physical Device Status: No physical USB device or emulator was connected at verification time; standalone APK artifact generated and ready for sideloading/installation.
 
 ---
 
