@@ -126,6 +126,20 @@ describe("CampusRouter & Localization — Accessible Navigation Tests", () => {
       router.cancelRoute();
       expect(router.getActiveRoute()).toBeNull();
     });
+
+    it("returns node lists and navigable destinations accurately", () => {
+      const allNodes = router.getAllNodes();
+      expect(allNodes.length).toBeGreaterThan(5);
+
+      const node = router.getNode("room_101");
+      expect(node).toBeDefined();
+      expect(node?.label).toBe("Room 101 Lecture Hall");
+
+      const destinations = router.getNavigableDestinations();
+      expect(destinations.length).toBeGreaterThan(0);
+      // All destinations should be rooms, entrances, landmarks, or restrooms, not corridors/stairs
+      expect(destinations.every((d) => d.type !== "stairs" && d.type !== "junction")).toBe(true);
+    });
   });
 
   describe("CampusLocalizer Sign Snapping", () => {

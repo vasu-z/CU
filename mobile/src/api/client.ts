@@ -1,4 +1,6 @@
-import { getBackendBaseUrl } from "../config/env";
+import { getBackendBaseUrl, setBackendBaseUrl } from "../config/env";
+
+export { getBackendBaseUrl as getApiBaseUrl, setBackendBaseUrl as setCustomApiBaseUrl };
 
 export interface HealthResponse {
   status: string;

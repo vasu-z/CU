@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import logging
 from typing import Optional
@@ -10,7 +12,11 @@ from app.schemas.campus import (
     NoticeItem,
     TimetableItem,
 )
-from app.services.gemini import GeminiServiceException, analyze_image, generate_text
+from app.services.gemini import (
+    GeminiServiceException,
+    generate_campus_structured_content,
+    generate_text,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -169,19 +175,54 @@ def read_campus_text(request: CampusReadingRequest) -> CampusReadingResponse:
             detail="Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env.",
         )
 
+    # Decode image data if provided
+    decoded_image_bytes: Optional[bytes] = None
+    resolved_mime: Optional[str] = None
+    if has_image:
+        raw_b64 = request.image_base64.strip()
+        if raw_b64.startswith("data:") and "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1].strip()
+        try:
+            decoded_image_bytes = base64.b64decode(raw_b64, validate=True)
+            if decoded_image_bytes.startswith(b"\xff\xd8\xff"):
+                resolved_mime = "image/jpeg"
+            elif decoded_image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                resolved_mime = "image/png"
+            else:
+                # Fallback to jpeg if valid bytes
+                resolved_mime = "image/jpeg"
+        except (binascii.Error, ValueError):
+            logger.warning("Invalid base64 payload provided for campus read")
+
+    # Detect Gurmukhi characters
+    has_gurmukhi = False
+    if request.ocr_text:
+        has_gurmukhi = any("\u0A00" <= ch <= "\u0A7F" for ch in request.ocr_text)
+
     # Build prompt for Gemma 4
     content_payload = ""
     if has_ocr:
         content_payload += f"OCR Extracted Text:\n{request.ocr_text.strip()}\n\n"
     content_payload += f"Requested Reading Mode: {request.reading_mode}\n"
+    if has_gurmukhi:
+        content_payload += "Note: Punjabi Gurmukhi text detected. Note any unverified characters in uncertainties.\n"
     content_payload += "Extract and structure this text according to the system instructions."
 
     try:
-        raw_response = generate_text(
-            prompt=f"{CAMPUS_READER_SYSTEM_PROMPT}\n\nInput:\n{content_payload}",
-            api_key=settings.GEMINI_API_KEY,
-            model=settings.GEMINI_MODEL,
-        )
+        if decoded_image_bytes and resolved_mime:
+            raw_response = generate_campus_structured_content(
+                prompt=f"{CAMPUS_READER_SYSTEM_PROMPT}\n\nInput:\n{content_payload}",
+                api_key=settings.GEMINI_API_KEY,
+                model=settings.GEMINI_MODEL,
+                image_bytes=decoded_image_bytes,
+                mime_type=resolved_mime,
+            )
+        else:
+            raw_response = generate_text(
+                prompt=f"{CAMPUS_READER_SYSTEM_PROMPT}\n\nInput:\n{content_payload}",
+                api_key=settings.GEMINI_API_KEY,
+                model=settings.GEMINI_MODEL,
+            )
 
         # Parse JSON from model output
         cleaned_json = raw_response.strip()
@@ -199,6 +240,12 @@ def read_campus_text(request: CampusReadingRequest) -> CampusReadingResponse:
         needs_rescan = bool(parsed.get("needs_rescan", False) or confidence < 0.65)
         spoken = parsed.get("spoken_summary", "")
 
+        uncertainties = parsed.get("uncertainties", [])
+        if has_gurmukhi:
+            uncertainties.append(
+                "Punjabi Gurmukhi text recognition is experimental on this version. Verify with campus staff."
+            )
+
         if needs_rescan or not spoken:
             spoken = "I couldn't read that clearly, please try again."
 
@@ -212,7 +259,7 @@ def read_campus_text(request: CampusReadingRequest) -> CampusReadingResponse:
             door_sign=DoorSignInfo(**parsed["door_sign"]) if parsed.get("door_sign") else None,
             timetable_items=[TimetableItem(**item) for item in parsed.get("timetable_items", [])],
             notices=[NoticeItem(**item) for item in parsed.get("notices", [])],
-            uncertainties=parsed.get("uncertainties", []),
+            uncertainties=uncertainties,
             unchecked_areas=parsed.get("unchecked_areas", ["Drop-offs and ground obstacles"]),
         )
 

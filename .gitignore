@@ -35,6 +35,8 @@ web-build/
 *.tsbuildinfo
 /ios
 /android
+mobile/ios/
+mobile/android/
 
 # IDE / Editor
 .vscode/

@@ -425,4 +425,19 @@ export class CampusRouter {
   public getActiveRoute(): NavigationRoute | null {
     return this.activeRoute;
   }
+
+  public getAllNodes(): CampusNode[] {
+    return this.graph ? [...this.graph.nodes] : [];
+  }
+
+  public getNode(id: string): CampusNode | undefined {
+    return this.nodeMap.get(id);
+  }
+
+  public getNavigableDestinations(): CampusNode[] {
+    if (!this.graph) return [];
+    return this.graph.nodes.filter(
+      (n) => n.type === "room" || n.type === "entrance" || n.type === "landmark" || n.type === "restroom"
+    );
+  }
 }

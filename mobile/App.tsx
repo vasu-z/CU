@@ -6,6 +6,10 @@ import {
   Pressable,
   AccessibilityInfo,
   Platform,
+  Modal,
+  TextInput,
+  ScrollView,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -19,12 +23,22 @@ import { voiceRecognitionService } from "./src/services/voiceRecognition";
 import { hapticsService } from "./src/services/haptics";
 import { readingPipeline } from "./src/services/readingPipeline";
 import { parseVoiceCommand } from "./src/services/voiceCommands";
-import { analyzeSceneWithVision, readCampusText } from "./src/api/client";
-import { CampusRouter, CampusGraph, NavigationRoute } from "./src/navigation/campusRouter";
+import {
+  analyzeSceneWithVision,
+  readCampusText,
+  checkBackendHealth,
+  setCustomApiBaseUrl,
+  getApiBaseUrl,
+} from "./src/api/client";
+import {
+  CampusRouter,
+  CampusGraph,
+  CampusNode,
+  NavigationRoute,
+} from "./src/navigation/campusRouter";
 import { CampusLocalizer } from "./src/navigation/localization";
 import { CornerControls } from "./src/components/CornerControls";
 import sampleCampusData from "./src/data/sample_campus_graph.json";
-
 
 export type AssistantState =
   | "idle"
@@ -35,6 +49,7 @@ export type AssistantState =
   | "error";
 
 const ONBOARDING_KEY = "@saarthi_welcome_played";
+const BACKEND_URL_KEY = "@saarthi_backend_url";
 
 export default function App() {
   const cameraRef = useRef<CameraView>(null);
@@ -52,10 +67,23 @@ export default function App() {
   );
 
   // Campus navigation & localization state
-  const routerRef = useRef<CampusRouter>(new CampusRouter(sampleCampusData as unknown as CampusGraph));
-  const localizerRef = useRef<CampusLocalizer>(new CampusLocalizer(sampleCampusData as unknown as CampusGraph));
+  const routerRef = useRef<CampusRouter>(
+    new CampusRouter(sampleCampusData as unknown as CampusGraph)
+  );
+  const localizerRef = useRef<CampusLocalizer>(
+    new CampusLocalizer(sampleCampusData as unknown as CampusGraph)
+  );
+
   const [currentLocationId, setCurrentLocationId] = useState<string>("entrance_main");
+  const [isLocationVerified, setIsLocationVerified] = useState<boolean>(true);
   const [activeRoute, setActiveRoute] = useState<NavigationRoute | null>(null);
+  const [avoidStairs, setAvoidStairs] = useState<boolean>(true);
+
+  // Modals
+  const [isNavModalOpen, setIsNavModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [destinationSearch, setDestinationSearch] = useState("");
+  const [backendUrlInput, setBackendUrlInput] = useState(getApiBaseUrl());
 
   // Request & cancellation management
   const isBusyRef = useRef<boolean>(false);
@@ -75,10 +103,16 @@ export default function App() {
     setStatusSubtitle(`Camera failed to initialize: ${error.message}`);
   }, []);
 
-  // Voice onboarding
+  // Onboarding & initialization
   useEffect(() => {
-    async function playWelcome() {
+    async function initApp() {
       try {
+        const savedUrl = await AsyncStorage.getItem(BACKEND_URL_KEY);
+        if (savedUrl) {
+          setCustomApiBaseUrl(savedUrl);
+          setBackendUrlInput(savedUrl);
+        }
+
         const played = await AsyncStorage.getItem(ONBOARDING_KEY);
         if (!played) {
           const welcome =
@@ -90,14 +124,16 @@ export default function App() {
         // Safe ignore
       }
     }
-    playWelcome();
+    initApp();
     AccessibilityInfo.announceForAccessibility("SAARTHI Campus Assistant ready.");
   }, []);
 
   /**
    * Helper to capture a photo frame safely with timeout and AbortController check.
    */
-  const captureFrameBase64 = async (currentRequestId: number): Promise<{ base64: string; uri: string } | null> => {
+  const captureFrameBase64 = async (
+    currentRequestId: number
+  ): Promise<{ base64: string; uri: string } | null> => {
     if (!isCameraReadyRef.current) {
       const waitStart = Date.now();
       while (!isCameraReadyRef.current && Date.now() - waitStart < 2500) {
@@ -175,13 +211,15 @@ export default function App() {
 
       if (locResult.isLocalized && locResult.node) {
         setCurrentLocationId(locResult.node.id);
+        setIsLocationVerified(true);
         setStatusTitle(locResult.node.label);
         setStatusSubtitle(locResult.spokenMessage);
         await speechService.speak(locResult.spokenMessage, { force: true });
       } else {
+        setIsLocationVerified(false);
         const fallbackMsg =
           locResult.spokenMessage ||
-          "I see text, but couldn't verify this room on the campus map. Starting from Main Entrance.";
+          "I see text, but couldn't verify this room on the campus map. Please select a known starting point.";
         setStatusTitle("Location Unverified");
         setStatusSubtitle(fallbackMsg);
         await speechService.speak(fallbackMsg, { force: true });
@@ -201,16 +239,27 @@ export default function App() {
   /**
    * CORNER 2 (TOP-RIGHT): Read Text / Notice / Timetable
    */
-  const handleReadText = async () => {
+  const handleReadText = async (
+    mode: "auto" | "timetable" | "sign" | "notice" | "surroundings" = "auto"
+  ) => {
     if (isBusyRef.current) return;
     isBusyRef.current = true;
     const currentRequestId = ++requestIdRef.current;
 
     await speechService.stop();
     setAssistantState("capturing");
-    setStatusTitle("Reading Text...");
-    setStatusSubtitle("Scanning timetable, sign, or notice board...");
-    AccessibilityInfo.announceForAccessibility("Scanning text in view.");
+
+    const modeLabels: Record<string, string> = {
+      timetable: "Scanning Timetable...",
+      sign: "Reading Room Number...",
+      notice: "Summarizing Notice...",
+      surroundings: "Describing Surroundings...",
+      auto: "Reading Text...",
+    };
+
+    setStatusTitle(modeLabels[mode] || "Reading Text...");
+    setStatusSubtitle("Capturing camera frame...");
+    AccessibilityInfo.announceForAccessibility(`Scanning in ${mode} mode.`);
 
     const photo = await captureFrameBase64(currentRequestId);
     if (!photo || !photo.base64) {
@@ -230,17 +279,30 @@ export default function App() {
       const result = await readingPipeline.processCampusImage({
         imageBase64: photo.base64,
         imageUri: photo.uri,
-        readingMode: "auto",
+        readingMode: mode,
       });
 
       if (requestIdRef.current !== currentRequestId) return;
 
-      setStatusTitle("Text Read");
+      setStatusTitle("Information Read");
       setStatusSubtitle(result.spokenText);
+
+      // If sign reading was requested, also attempt snapping location
+      if (mode === "sign" && result.response.door_sign?.room_number) {
+        const snapped = localizerRef.current.localizeFromOcr(
+          result.response.door_sign.room_number
+        );
+        if (snapped.isLocalized && snapped.node) {
+          setCurrentLocationId(snapped.node.id);
+          setIsLocationVerified(true);
+        }
+      }
+
       setAssistantState("idle");
     } catch (err: any) {
       setAssistantState("error");
-      const errText = err?.message || "I couldn't read that clearly, please try again.";
+      const errText =
+        err?.message || "I couldn't read that clearly, please try again.";
       setStatusSubtitle(errText);
     } finally {
       isBusyRef.current = false;
@@ -287,12 +349,23 @@ export default function App() {
    */
   const handleNavigateTo = async (destinationQuery: string) => {
     await speechService.stop();
+
+    // Priority 3 Safety: Never silently trigger route from unverified location
+    if (!isLocationVerified) {
+      const unverifiedMsg = `Your starting location is not verified. Please select your starting landmark from the list or scan a nearby door plaque.`;
+      setStatusTitle("Start Location Needed");
+      setStatusSubtitle(unverifiedMsg);
+      await speechService.speak(unverifiedMsg, { force: true });
+      setIsNavModalOpen(true);
+      return;
+    }
+
     setAssistantState("thinking");
     setStatusTitle("Routing...");
     setStatusSubtitle(`Finding accessible route to "${destinationQuery}"...`);
 
     const route = routerRef.current.findRoute(currentLocationId, destinationQuery, {
-      avoidStairs: true,
+      avoidStairs,
     });
     setActiveRoute(route.status === "success" ? route : null);
 
@@ -315,7 +388,7 @@ export default function App() {
     if (!voiceStatus.available) {
       setAssistantState("error");
       const msg =
-        "Voice speech recognition requires an Expo development build. Use corner buttons or fallback test buttons.";
+        "Voice speech recognition requires an Expo development build. In Expo Go, use corner buttons or navigation search.";
       setStatusTitle("Voice Input Unavailable");
       setStatusSubtitle(msg);
       await speechService.speak(msg, { force: true });
@@ -350,14 +423,16 @@ export default function App() {
         setAssistantState("error");
         setStatusTitle("Voice Error");
         setStatusSubtitle(err);
-        await speechService.speak(`Voice recognition error: ${err}`, { force: true });
+        await speechService.speak(`Voice error: ${err}`, { force: true });
       },
       onEnd: async () => {
         if (!finalTranscript) {
           setAssistantState("idle");
           setStatusTitle("Ready");
           setStatusSubtitle("No question detected. Tap Talk to try again.");
-          await speechService.speak("No question detected. Tap Talk to try again.", { force: true });
+          await speechService.speak("No question detected. Tap Talk to try again.", {
+            force: true,
+          });
           return;
         }
 
@@ -366,7 +441,7 @@ export default function App() {
 
         switch (command.intent) {
           case "read_this":
-            handleReadText();
+            handleReadText(command.readingMode || "auto");
             break;
           case "where_am_i":
             handleWhereAmI();
@@ -383,12 +458,14 @@ export default function App() {
             }
             break;
           case "what_is_ahead":
-            // Fall back to general visual description
             setAssistantState("capturing");
             const photo = await captureFrameBase64(++requestIdRef.current);
             if (photo?.base64) {
               setAssistantState("thinking");
-              const visRes = await analyzeSceneWithVision(photo.base64, "What is ahead in front of me?");
+              const visRes = await analyzeSceneWithVision(
+                photo.base64,
+                "What is ahead in front of me?"
+              );
               setStatusTitle("What Is Ahead");
               setStatusSubtitle(visRes.description);
               await speechService.speak(visRes.description, { force: true });
@@ -404,7 +481,7 @@ export default function App() {
           case "unknown":
           default:
             setAssistantState("idle");
-            const unkMsg = `I heard "${finalTranscript}". You can ask: Read this, Where am I, Next class, What is ahead, or Take me to the library.`;
+            const unkMsg = `I heard "${finalTranscript}". You can ask: Read this, Read the timetable, Where am I, Next class, Take me to the library, What is ahead, Repeat, or Stop.`;
             setStatusSubtitle(unkMsg);
             await speechService.speak(unkMsg, { force: true });
             break;
@@ -412,6 +489,22 @@ export default function App() {
       },
     });
   };
+
+  // Navigable destinations for search & selection
+  const allDestinations = routerRef.current.getNavigableDestinations();
+  const filteredDestinations = destinationSearch.trim()
+    ? allDestinations.filter(
+        (d) =>
+          d.label.toLowerCase().includes(destinationSearch.toLowerCase()) ||
+          d.id.toLowerCase().includes(destinationSearch.toLowerCase()) ||
+          (d.ocr_aliases &&
+            d.ocr_aliases.some((a) =>
+              a.toLowerCase().includes(destinationSearch.toLowerCase())
+            ))
+      )
+    : allDestinations;
+
+  const currentNode = routerRef.current.getNode(currentLocationId);
 
   return (
     <View style={styles.container}>
@@ -445,17 +538,76 @@ export default function App() {
         </View>
       )}
 
-      {/* Top Header Bar */}
+      {/* Top Header Bar & Sample Campus Data Disclosure */}
       <SafeAreaView style={styles.topSafeArea} edges={["top"]} pointerEvents="box-none">
         <View style={styles.topHeader}>
-          <Text style={styles.appName} accessibilityRole="header">
-            SAARTHI
-          </Text>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>
-              {assistantState.toUpperCase()}
+          <View style={styles.brandContainer}>
+            <Text style={styles.appName} accessibilityRole="header">
+              SAARTHI
             </Text>
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusBadgeText}>
+                {assistantState.toUpperCase()}
+              </Text>
+            </View>
           </View>
+
+          {/* Top Quick Actions */}
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => setIsNavModalOpen(true)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Campus Navigation and Destination Search"
+              accessibilityHint="Opens list of campus destinations and routing options."
+              style={styles.iconButton}
+            >
+              <Text style={styles.iconButtonText}>🧭 Map</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setIsSettingsModalOpen(true)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Settings and Backend Server Configuration"
+              style={styles.iconButton}
+            >
+              <Text style={styles.iconButtonText}>⚙️</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Priority 2 Safety Disclosure: SAMPLE CAMPUS DATA Banner */}
+        <View
+          style={styles.sampleDataBanner}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel="Notice: Loaded demonstration map with sample campus data. Not real surveyed GPS coordinates."
+        >
+          <Text style={styles.sampleDataBannerText}>
+            SAMPLE CAMPUS DATA (DEMONSTRATION MAP)
+          </Text>
+        </View>
+
+        {/* Current Location Badge */}
+        <View
+          style={styles.locationBanner}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel={`Current location: ${currentNode?.label || "Unknown"}. Status: ${
+            isLocationVerified ? "Verified" : "Unverified"
+          }`}
+        >
+          <Text style={styles.locationBannerText}>
+            📍 {currentNode?.label || "Unknown Node"}{" "}
+            <Text
+              style={
+                isLocationVerified ? styles.verifiedText : styles.unverifiedText
+              }
+            >
+              [{isLocationVerified ? "VERIFIED" : "UNVERIFIED"}]
+            </Text>
+          </Text>
         </View>
       </SafeAreaView>
 
@@ -477,26 +629,73 @@ export default function App() {
           >
             {statusTitle}
           </Text>
-          <Text style={styles.statusSubtitle} maxFontSizeMultiplier={1.6} numberOfLines={5}>
+          <Text
+            style={styles.statusSubtitle}
+            maxFontSizeMultiplier={1.6}
+            numberOfLines={5}
+          >
             {statusSubtitle}
           </Text>
 
-          {/* If navigation is active, provide Advance Step button */}
+          {/* Active Navigation Turn-by-Turn Card */}
           {activeRoute && (
-            <Pressable
-              onPress={() => {
-                const step = routerRef.current.advanceStep();
-                setStatusSubtitle(step.spokenMessage);
-                speechService.speak(step.spokenMessage, { force: true });
-                if (step.isFinished) setActiveRoute(null);
-              }}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Next Navigation Step"
-              style={styles.advanceStepButton}
-            >
-              <Text style={styles.advanceStepButtonText}>Next Step</Text>
-            </Pressable>
+            <View style={styles.navigationControls}>
+              <View style={styles.navStepDetails}>
+                <Text style={styles.navStepCounter}>
+                  Step {routerRef.current.getCurrentStep()?.stepIndex || 1} of{" "}
+                  {activeRoute.steps.length}
+                </Text>
+                <Text style={styles.navTactileGuidance}>
+                  {routerRef.current.getCurrentStep()?.tactileGuidance ||
+                    "Proceed cautiously along corridor."}
+                </Text>
+              </View>
+
+              <View style={styles.navButtonsRow}>
+                <Pressable
+                  onPress={() => {
+                    const step = routerRef.current.advanceStep();
+                    setStatusSubtitle(step.spokenMessage);
+                    speechService.speak(step.spokenMessage, { force: true });
+                    if (step.isFinished) setActiveRoute(null);
+                  }}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next Navigation Step"
+                  style={styles.advanceStepButton}
+                >
+                  <Text style={styles.advanceStepButtonText}>Next Step</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    const msg = routerRef.current.repeatCurrentInstruction();
+                    speechService.speak(msg, { force: true });
+                  }}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Repeat Step Instruction"
+                  style={styles.repeatStepButton}
+                >
+                  <Text style={styles.repeatStepButtonText}>Repeat</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    routerRef.current.cancelRoute();
+                    setActiveRoute(null);
+                    speechService.speak("Navigation cancelled.", { force: true });
+                    setStatusSubtitle("Navigation cancelled.");
+                  }}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel Route"
+                  style={styles.cancelRouteButton}
+                >
+                  <Text style={styles.cancelRouteButtonText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
           )}
         </View>
       </View>
@@ -504,14 +703,256 @@ export default function App() {
       {/* 4 Fixed Corner Controls with Edge-Gesture Protection */}
       <CornerControls
         onWhereAmI={handleWhereAmI}
-        onReadText={handleReadText}
+        onReadText={() => handleReadText("auto")}
         onStop={handleStop}
         onRepeat={handleRepeat}
         onTalk={handleTalk}
         isListening={assistantState === "listening"}
-        isProcessing={assistantState === "capturing" || assistantState === "thinking"}
+        isProcessing={
+          assistantState === "capturing" || assistantState === "thinking"
+        }
         isSpeaking={assistantState === "speaking"}
       />
+
+      {/* MODAL 1: CAMPUS NAVIGATION & DESTINATION SEARCH */}
+      <Modal
+        visible={isNavModalOpen}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setIsNavModalOpen(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Campus Navigation
+            </Text>
+            <Pressable
+              onPress={() => setIsNavModalOpen(false)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Close Navigation"
+              style={styles.modalCloseButton}
+            >
+              <Text style={styles.modalCloseButtonText}>Done</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.modalBody}>
+            {/* Disclaimer */}
+            <View style={styles.modalNotice}>
+              <Text style={styles.modalNoticeText}>
+                ⚠️ Demonstration graph loaded. Never invent surveyed routes or
+                guarantee collision-free travel.
+              </Text>
+            </View>
+
+            {/* Starting Location Selection */}
+            <Text style={styles.sectionHeader}>Starting Location</Text>
+            <Text style={styles.sectionHelper}>
+              Select your current location if unverified:
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipRow}
+            >
+              {routerRef.current.getAllNodes().map((node) => (
+                <Pressable
+                  key={node.id}
+                  onPress={() => {
+                    setCurrentLocationId(node.id);
+                    setIsLocationVerified(true);
+                    speechService.speak(`Starting location set to ${node.label}`);
+                  }}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Set start location to ${node.label}`}
+                  style={[
+                    styles.chipButton,
+                    currentLocationId === node.id && styles.chipButtonSelected,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      currentLocationId === node.id && styles.chipTextSelected,
+                    ]}
+                  >
+                    {node.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            {/* Accessible Route Toggle */}
+            <View style={styles.toggleRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.toggleLabel}>Avoid Stairs (Step-Free)</Text>
+                <Text style={styles.toggleSubtitle}>
+                  Refuses routes when only stairs are available.
+                </Text>
+              </View>
+              <Switch
+                value={avoidStairs}
+                onValueChange={setAvoidStairs}
+                accessibilityLabel="Avoid Stairs option"
+                trackColor={{ false: "#475569", true: "#0284C7" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            {/* Search Destination */}
+            <Text style={styles.sectionHeader}>Select Destination</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search room, library, entrance..."
+              placeholderTextColor="#94A3B8"
+              value={destinationSearch}
+              onChangeText={setDestinationSearch}
+              accessible={true}
+              accessibilityLabel="Search campus destinations"
+              accessibilityHint="Type a room number or building name"
+            />
+
+            {/* Destination List */}
+            {filteredDestinations.map((dest) => (
+              <Pressable
+                key={dest.id}
+                onPress={() => {
+                  setIsNavModalOpen(false);
+                  handleNavigateTo(dest.label);
+                }}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel={`Navigate to ${dest.label}. Floor ${dest.floor}.`}
+                style={styles.destCard}
+              >
+                <View>
+                  <Text style={styles.destTitle}>{dest.label}</Text>
+                  <Text style={styles.destSubtitle}>
+                    {dest.building} • Floor {dest.floor} • Type: {dest.type}
+                  </Text>
+                </View>
+                <Text style={styles.destGoText}>Go →</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* MODAL 2: SETTINGS & BACKEND CONFIGURATION */}
+      <Modal
+        visible={isSettingsModalOpen}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setIsSettingsModalOpen(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Settings & Backend
+            </Text>
+            <Pressable
+              onPress={() => setIsSettingsModalOpen(false)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Close Settings"
+              style={styles.modalCloseButton}
+            >
+              <Text style={styles.modalCloseButtonText}>Done</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.modalBody}>
+            {/* Backend Server URL */}
+            <Text style={styles.sectionHeader}>FastAPI Backend Server</Text>
+            <Text style={styles.sectionHelper}>
+              Host IP address running the Saarthi FastAPI backend:
+            </Text>
+            <TextInput
+              style={styles.searchInput}
+              value={backendUrlInput}
+              onChangeText={setBackendUrlInput}
+              placeholder="http://192.168.29.201:8000"
+              placeholderTextColor="#94A3B8"
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessible={true}
+              accessibilityLabel="Backend server address"
+            />
+
+            <View style={styles.settingsButtonsRow}>
+              <Pressable
+                onPress={async () => {
+                  setCustomApiBaseUrl(backendUrlInput);
+                  await AsyncStorage.setItem(BACKEND_URL_KEY, backendUrlInput);
+                  const isHealthy = await checkBackendHealth();
+                  const msg = isHealthy
+                    ? "Backend server connected successfully."
+                    : "Backend server connection failed. Check Wi-Fi and firewall.";
+                  await speechService.speak(msg, { force: true });
+                  setStatusSubtitle(msg);
+                }}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel="Save and test backend connection"
+                style={styles.saveSettingsButton}
+              >
+                <Text style={styles.saveSettingsButtonText}>
+                  Save & Test Connection
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Model & AI Disclosures */}
+            <Text style={[styles.sectionHeader, { marginTop: 24 }]}>
+              AI Architecture & Model
+            </Text>
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Gemma 4 Multimodal</Text>
+              <Text style={styles.infoDescription}>
+                Model ID: gemma-4-26b-a4b-it via Google Gemini API.
+                All credentials remain server-side. Images are processed
+                ephemerally and not persisted.
+              </Text>
+            </View>
+
+            {/* Safety & O&M Disclosures */}
+            <Text style={[styles.sectionHeader, { marginTop: 24 }]}>
+              Safety Standing Rules
+            </Text>
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Non-Negotiable Assistive Rules</Text>
+              <Text style={styles.infoDescription}>
+                1. Saarthi is an assistive companion, NOT a replacement for a
+                white cane, guide dog, or O&M training.{"\n"}
+                2. Never announces "the path is clear".{"\n"}
+                3. Deterministic plain code computes dates and navigation routes;
+                no LLM date arithmetic.{"\n"}
+                4. Fail safe and fail audible on all errors.
+              </Text>
+            </View>
+
+            {/* Reset Onboarding Welcome */}
+            <Pressable
+              onPress={async () => {
+                await AsyncStorage.removeItem(ONBOARDING_KEY);
+                await speechService.speak("Onboarding instructions reset.", {
+                  force: true,
+                });
+              }}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Replay onboarding welcome message"
+              style={styles.resetButton}
+            >
+              <Text style={styles.resetButtonText}>
+                Replay Onboarding Instructions
+              </Text>
+            </Pressable>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -566,9 +1007,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 10 : 6,
-    paddingBottom: 12,
+    paddingBottom: 8,
+  },
+  brandContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   appName: {
     color: "#FFFFFF",
@@ -577,32 +1023,85 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   statusBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
   },
   statusBadgeText: {
     color: "#4ADE80",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.8,
   },
+  headerActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  iconButton: {
+    backgroundColor: "rgba(30, 41, 59, 0.85)",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  sampleDataBanner: {
+    backgroundColor: "rgba(234, 179, 8, 0.9)",
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  sampleDataBannerText: {
+    color: "#0F172A",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  locationBanner: {
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  locationBannerText: {
+    color: "#E2E8F0",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  verifiedText: {
+    color: "#4ADE80",
+    fontWeight: "800",
+  },
+  unverifiedText: {
+    color: "#F87171",
+    fontWeight: "800",
+  },
   centerContainer: {
     position: "absolute",
-    top: "32%",
-    left: 20,
-    right: 20,
+    top: "30%",
+    left: 16,
+    right: 16,
     alignItems: "center",
     zIndex: 5,
   },
   statusCard: {
     width: "100%",
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    backgroundColor: "rgba(15, 23, 42, 0.94)",
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: "rgba(255, 255, 255, 0.2)",
@@ -614,7 +1113,7 @@ const styles = StyleSheet.create({
   },
   statusTitle: {
     color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
     marginBottom: 6,
   },
@@ -626,22 +1125,271 @@ const styles = StyleSheet.create({
   },
   statusSubtitle: {
     color: "#E2E8F0",
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  navigationControls: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.15)",
+    paddingTop: 12,
+  },
+  navStepDetails: {
+    marginBottom: 10,
+  },
+  navStepCounter: {
+    color: "#38BDF8",
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  navTactileGuidance: {
+    color: "#94A3B8",
+    fontSize: 13,
+    fontStyle: "italic",
+  },
+  navButtonsRow: {
+    flexDirection: "row",
+    gap: 8,
   },
   advanceStepButton: {
-    marginTop: 14,
+    flex: 2,
     backgroundColor: "#0284C7",
     paddingVertical: 12,
-    paddingHorizontal: 20,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
+    minHeight: 52,
   },
   advanceStepButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
+  },
+  repeatStepButton: {
+    flex: 1.2,
+    backgroundColor: "rgba(51, 65, 85, 0.9)",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  repeatStepButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  cancelRouteButton: {
+    flex: 1.2,
+    backgroundColor: "rgba(185, 28, 28, 0.8)",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  cancelRouteButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "#0B0E14",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.15)",
+  },
+  modalTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  modalCloseButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#0284C7",
+    borderRadius: 8,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  modalCloseButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  modalBody: {
+    flex: 1,
+    padding: 20,
+  },
+  modalNotice: {
+    backgroundColor: "rgba(234, 179, 8, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(234, 179, 8, 0.4)",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  modalNoticeText: {
+    color: "#FDE047",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  sectionHeader: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  sectionHelper: {
+    color: "#94A3B8",
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  chipRow: {
+    flexDirection: "row",
+    marginBottom: 20,
+  },
+  chipButton: {
+    backgroundColor: "#1E293B",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+    minHeight: 48,
+    justifyContent: "center",
+  },
+  chipButtonSelected: {
+    backgroundColor: "#0284C7",
+    borderColor: "#38BDF8",
+  },
+  chipText: {
+    color: "#E2E8F0",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  chipTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1E293B",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  toggleLabel: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  toggleSubtitle: {
+    color: "#94A3B8",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  searchInput: {
+    backgroundColor: "#1E293B",
+    color: "#FFFFFF",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#334155",
+    fontSize: 15,
+    marginBottom: 16,
+    minHeight: 52,
+  },
+  destCard: {
+    backgroundColor: "#131B2A",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#1E293B",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    minHeight: 64,
+  },
+  destTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  destSubtitle: {
+    color: "#94A3B8",
+    fontSize: 12,
+  },
+  destGoText: {
+    color: "#38BDF8",
+    fontSize: 18,
+    fontWeight: "800",
+    marginLeft: 10,
+  },
+  settingsButtonsRow: {
+    flexDirection: "row",
+    marginTop: 8,
+  },
+  saveSettingsButton: {
+    flex: 1,
+    backgroundColor: "#0284C7",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    minHeight: 52,
+    justifyContent: "center",
+  },
+  saveSettingsButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  infoCard: {
+    backgroundColor: "#1E293B",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  infoTitle: {
+    color: "#38BDF8",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  infoDescription: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  resetButton: {
+    marginTop: 24,
+    marginBottom: 40,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: "rgba(51, 65, 85, 0.6)",
+    borderWidth: 1,
+    borderColor: "#475569",
+    alignItems: "center",
+    minHeight: 52,
+    justifyContent: "center",
+  },
+  resetButtonText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -151,3 +151,78 @@ def test_campus_read_malformed_llm_output_fails_safely(
     data = response.json()
     assert data["needs_rescan"] is True
     assert "couldn't read that clearly" in data["spoken_summary"].lower()
+
+
+@patch("app.api.routes.campus.generate_campus_structured_content")
+def test_campus_read_with_image_calls_multimodal(
+    mock_multimodal: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    """Tests that sending image_base64 invokes generate_campus_structured_content."""
+    import base64
+    monkeypatch.setenv("GEMINI_API_KEY", "real-key")
+    monkeypatch.setenv("ENABLE_AI_MOCK", "False")
+    get_settings.cache_clear()
+
+    # Valid 1x1 JPEG bytes
+    dummy_jpeg_b64 = base64.b64encode(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb").decode("ascii")
+
+    mock_llm_json = {
+        "reading_mode": "sign",
+        "spoken_summary": "Door sign for Room 101.",
+        "confidence": 0.90,
+        "needs_rescan": False,
+        "source_text": "Room 101",
+        "door_sign": {
+            "room_number": "Room 101",
+            "department": "Engineering",
+            "occupants": [],
+            "status": "Available",
+        },
+        "uncertainties": [],
+        "unchecked_areas": ["Ground level"],
+    }
+    mock_multimodal.return_value = json.dumps(mock_llm_json)
+
+    response = client.post(
+        "/api/v1/campus/read",
+        json={"image_base64": dummy_jpeg_b64, "reading_mode": "sign"},
+    )
+    assert response.status_code == 200
+    assert mock_multimodal.called
+    data = response.json()
+    assert data["door_sign"]["room_number"] == "Room 101"
+
+
+@patch("app.api.routes.campus.generate_text")
+def test_campus_read_gurmukhi_detected_adds_uncertainty(
+    mock_generate: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    """Verifies that Punjabi Gurmukhi text appends an explicit experimental uncertainty disclaimer."""
+    monkeypatch.setenv("GEMINI_API_KEY", "real-key")
+    monkeypatch.setenv("ENABLE_AI_MOCK", "False")
+    get_settings.cache_clear()
+
+    mock_llm_json = {
+        "reading_mode": "notice",
+        "spoken_summary": "Notice about Punjabi university events.",
+        "confidence": 0.88,
+        "needs_rescan": False,
+        "source_text": "ਯੂਨੀਵਰਸਿਟੀ ਨੋਟਿਸ",
+        "uncertainties": [],
+        "unchecked_areas": ["Surroundings"],
+    }
+    mock_generate.return_value = json.dumps(mock_llm_json)
+
+    # Contains Gurmukhi chars: ਯੂਨੀਵਰਸਿਟੀ (University in Punjabi)
+    response = client.post(
+        "/api/v1/campus/read",
+        json={"ocr_text": "ਯੂਨੀਵਰਸਿਟੀ ਨੋਟਿਸ 2026", "reading_mode": "notice"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert any("Gurmukhi" in u for u in data["uncertainties"])
+

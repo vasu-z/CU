@@ -242,9 +242,9 @@ npx expo start --tunnel
 
 ## 5. Verification & Test Commands
 
-### Backend Automated Test Suite (41 tests)
+### Backend Automated Test Suite (43 tests)
 
-The backend test suite verifies core configuration, health check endpoints, AI status/vision endpoints, offline mock modes, campus reading extraction, survey CSV-to-graph conversion, and end-to-end demo flows with test fixtures.
+The backend test suite verifies core configuration, health check endpoints, AI status/vision endpoints, offline mock modes, multimodal and text campus reading extraction, Gurmukhi language detection, survey CSV-to-graph conversion, and end-to-end demo flows with test fixtures.
 
 ```powershell
 cd backend
@@ -256,14 +256,14 @@ pytest -v
 - `tests/test_config.py` (2 passed)
 - `tests/test_health.py` (4 passed)
 - `tests/test_ai.py` (8 passed)
-- `tests/test_campus_reading.py` (7 passed)
+- `tests/test_campus_reading.py` (9 passed)
 - `tests/test_csv_to_campus_graph.py` (3 passed)
 - `tests/test_demo_flow.py` (4 passed)
-- **Total: 41 passed, 0 failed in ~2.8s**
+- **Total: 43 passed, 0 failed in ~2.9s**
 
-### Mobile Automated Test Suite (30 tests)
+### Mobile Automated Test Suite (32 tests)
 
-The client unit test suite verifies deterministic calendar and next-class calculation, Dijkstra shortest path routing with strict stair-avoidance, unmapped node handling, and deterministic voice intent parsing.
+The client unit test suite verifies deterministic calendar and next-class calculation, Dijkstra shortest path routing with strict stair-avoidance, unmapped node handling, destination node getters, and deterministic voice intent parsing across reading modes.
 
 ```powershell
 cd mobile
@@ -272,19 +272,21 @@ npm test
 
 **Results:**
 - `src/utils/dateTimeReasoning.test.ts` (10 passed)
-- `src/navigation/campusRouter.test.ts` (12 passed)
-- `src/services/voiceCommands.test.ts` (8 passed)
-- **Total: 30 passed, 0 failed**
+- `src/navigation/campusRouter.test.ts` (13 passed)
+- `src/services/voiceCommands.test.ts` (9 passed)
+- **Total: 32 passed, 0 failed in ~3.5s**
 
-### Mobile Type-Check & Health
+### Mobile Type-Check & Expo Doctor (21/21 passed)
 
 ```powershell
 cd mobile
 npm run type-check
+npx expo-doctor
 ```
 
 **Results:**
 - `tsc --noEmit`: 0 errors
+- `expo-doctor`: 21/21 checks passed (0 issues detected)
 
 ---
 
@@ -299,6 +301,10 @@ npm run type-check
    - SAARTHI is an assistive navigation and reading aid. It is **not** a replacement for a white cane, guide dog, or formal orientation-and-mobility training.
    - The app **never** announces *"the path is clear"* and never guarantees collision-free walking.
    - All spatial descriptions explicitly state uninspected regions (such as low drop-offs, ground obstacles, or out-of-frame hazards).
+5. **Language & Script Limitations**:
+   - English is fully supported across speech output, on-device OCR, and Gemma 4 vision structuring.
+   - Hindi / Devanagari text recognition is supported via cloud Gemma 4 vision extraction.
+   - Punjabi Gurmukhi script recognition is experimental in this release. When Gurmukhi text is detected, the system appends an explicit uncertainty advisory requesting verification with campus staff.
 
 ---
 

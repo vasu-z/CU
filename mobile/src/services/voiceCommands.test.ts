@@ -8,6 +8,20 @@ describe("voiceCommands — Deterministic Intent Parsing", () => {
     expect(parseVoiceCommand("read noticeboard!").intent).toBe("read_this");
   });
 
+  it("parses specific reading modes for timetable, room number, and notice", () => {
+    const timetableCmd = parseVoiceCommand("Read the timetable.");
+    expect(timetableCmd.intent).toBe("read_this");
+    expect(timetableCmd.readingMode).toBe("timetable");
+
+    const signCmd = parseVoiceCommand("Read this room number.");
+    expect(signCmd.intent).toBe("read_this");
+    expect(signCmd.readingMode).toBe("sign");
+
+    const noticeCmd = parseVoiceCommand("Summarize this notice.");
+    expect(noticeCmd.intent).toBe("read_this");
+    expect(noticeCmd.readingMode).toBe("notice");
+  });
+
   it("parses 'What is ahead?' intent correctly", () => {
     expect(parseVoiceCommand("What is ahead?").intent).toBe("what_is_ahead");
     expect(parseVoiceCommand("what's ahead").intent).toBe("what_is_ahead");

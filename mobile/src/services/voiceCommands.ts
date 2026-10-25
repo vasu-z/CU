@@ -19,6 +19,7 @@ export interface ParsedVoiceCommand {
   intent: VoiceIntentType;
   rawTranscript: string;
   destinationQuery?: string;
+  readingMode?: "auto" | "timetable" | "sign" | "notice" | "surroundings";
   confidence: number;
 }
 
@@ -36,7 +37,7 @@ function cleanTranscript(raw: string): string {
 
 
 /**
- * Classifies a user's speech transcript into one of the 7 supported campus intents.
+ * Classifies a user's speech transcript into one of the supported campus intents.
  */
 export function parseVoiceCommand(transcript: string): ParsedVoiceCommand {
   const cleaned = cleanTranscript(transcript);
@@ -51,6 +52,7 @@ export function parseVoiceCommand(transcript: string): ParsedVoiceCommand {
     cleaned === "cancel" ||
     cleaned === "quiet" ||
     cleaned === "shut up" ||
+    cleaned === "hush" ||
     cleaned.startsWith("stop speaking") ||
     cleaned.startsWith("stop reading")
   ) {
@@ -69,19 +71,75 @@ export function parseVoiceCommand(transcript: string): ParsedVoiceCommand {
     return { intent: "repeat", rawTranscript: transcript, confidence: 1.0 };
   }
 
-  // 3. READ THIS intent
+  // 3. READ THE TIMETABLE intent
+  if (
+    cleaned === "read the timetable" ||
+    cleaned === "read timetable" ||
+    cleaned === "read my timetable" ||
+    cleaned === "scan timetable" ||
+    cleaned.includes("read timetable") ||
+    cleaned.includes("read the timetable")
+  ) {
+    return {
+      intent: "read_this",
+      rawTranscript: transcript,
+      readingMode: "timetable",
+      confidence: 0.98,
+    };
+  }
+
+  // 4. READ THIS ROOM NUMBER intent
+  if (
+    cleaned === "read this room number" ||
+    cleaned === "read room number" ||
+    cleaned === "read room" ||
+    cleaned === "read the sign" ||
+    cleaned === "read door sign" ||
+    cleaned.includes("room number") ||
+    cleaned === "read sign"
+  ) {
+    return {
+      intent: "read_this",
+      rawTranscript: transcript,
+      readingMode: "sign",
+      confidence: 0.98,
+    };
+  }
+
+  // 5. SUMMARIZE THIS NOTICE intent
+  if (
+    cleaned === "summarize this notice" ||
+    cleaned === "summarize notice" ||
+    cleaned === "read notice" ||
+    cleaned === "read the notice" ||
+    cleaned === "read noticeboard" ||
+    cleaned.includes("summarize this notice") ||
+    cleaned.includes("summarize notice") ||
+    cleaned === "noticeboard"
+  ) {
+    return {
+      intent: "read_this",
+      rawTranscript: transcript,
+      readingMode: "notice",
+      confidence: 0.98,
+    };
+  }
+
+  // 6. GENERAL READ THIS intent
   if (
     cleaned === "read this" ||
     cleaned === "read text" ||
-    cleaned === "read the sign" ||
-    cleaned === "read the notice" ||
-    cleaned === "read noticeboard" ||
     cleaned.startsWith("read this") ||
     cleaned.startsWith("read the") ||
     cleaned === "scan text" ||
     cleaned === "ocr"
   ) {
-    return { intent: "read_this", rawTranscript: transcript, confidence: 0.95 };
+    return {
+      intent: "read_this",
+      rawTranscript: transcript,
+      readingMode: "auto",
+      confidence: 0.95,
+    };
   }
 
   // 4. WHAT IS AHEAD intent

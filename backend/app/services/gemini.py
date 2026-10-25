@@ -103,6 +103,91 @@ def generate_text(prompt: str, api_key: Optional[str], model: str) -> str:
         )
 
 
+def generate_campus_structured_content(
+    prompt: str,
+    api_key: Optional[str],
+    model: str,
+    image_bytes: Optional[bytes] = None,
+    mime_type: Optional[str] = None,
+) -> str:
+    """
+    Send a structured extraction prompt (with optional image bytes) to Gemma 4 / Gemini API
+    and return the text response for JSON parsing.
+    """
+    if not api_key or not api_key.strip():
+        raise GeminiCredentialsMissingException()
+
+    try:
+        client = get_gemini_client(api_key=api_key)
+        contents: list = []
+        if image_bytes and mime_type:
+            contents.append(
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime_type,
+                )
+            )
+        contents.append(prompt)
+
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+        )
+
+        if not response or not response.text:
+            raise GeminiServiceException(
+                "Gemini returned an empty structured response.",
+                status_code=502,
+            )
+
+        return response.text.strip()
+
+    except GeminiServiceException:
+        raise
+    except errors.ClientError as exc:
+        code = getattr(exc, "code", None)
+        logger.warning("Gemini ClientError in structured content: code=%s", code)
+        if code in (401, 403):
+            raise GeminiServiceException(
+                "Gemini API authentication failed. Please verify that GEMINI_API_KEY is valid.",
+                status_code=502,
+            )
+        elif code == 429:
+            raise GeminiServiceException(
+                "Gemini API rate limit or quota exceeded. Please try again later.",
+                status_code=429,
+            )
+        elif code == 404:
+            raise GeminiServiceException(
+                f"Requested Gemini model '{model}' was not found or is unavailable.",
+                status_code=502,
+            )
+        else:
+            raise GeminiServiceException(
+                "Gemini API rejected the structured request.",
+                status_code=400,
+            )
+    except errors.ServerError as exc:
+        code = getattr(exc, "code", None)
+        logger.error("Gemini ServerError in structured content: code=%s", code)
+        raise GeminiServiceException(
+            "Gemini upstream server encountered an error. Please try again shortly.",
+            status_code=502,
+        )
+    except errors.APIError:
+        logger.error("General Gemini APIError in structured content")
+        raise GeminiServiceException(
+            "An error occurred while communicating with the Gemini API.",
+            status_code=502,
+        )
+    except Exception as exc:
+        logger.error("Unexpected error connecting to Gemini API: %s", type(exc).__name__)
+        raise GeminiServiceException(
+            "Failed to reach Gemini service. Please check network connectivity.",
+            status_code=502,
+        )
+
+
 def analyze_image(
     image_bytes: bytes,
     mime_type: str,
