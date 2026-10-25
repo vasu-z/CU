@@ -1,0 +1,26 @@
+{
+  "name": "sample_timetable",
+  "category": "timetable",
+  "ocr_text": "DEPARTMENT OF COMPUTER SCIENCE\nSEMESTER 3 CLASS SCHEDULE\n\nMonday:\nCS201 Data Structures | 10:00 - 11:30 | Room 204 (Turing Hall)\nMATH210 Linear Algebra | 14:00 - 15:30 | Hall B (Newton Center)\n\nWednesday:\nENG102 Technical Writing | 09:00 - 10:30 | Room 105",
+  "expected_structured": {
+    "reading_mode": "timetable",
+    "timetable_items": [
+      {
+        "course_code": "CS201",
+        "course_name": "Data Structures",
+        "day_of_week": "Monday",
+        "start_time": "10:00",
+        "end_time": "11:30",
+        "room": "Room 204"
+      },
+      {
+        "course_code": "MATH210",
+        "course_name": "Linear Algebra",
+        "day_of_week": "Monday",
+        "start_time": "14:00",
+        "end_time": "15:30",
+        "room": "Hall B"
+      }
+    ]
+  }
+}

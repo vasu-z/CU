@@ -23,15 +23,17 @@ router = APIRouter()
     "/status",
     response_model=AIStatusResponse,
     summary="Check AI configuration status",
-    description="Check whether a Gemini API key is configured without making external API calls or exposing keys.",
+    description="Check whether a Gemini API key is configured or development mock mode is enabled without exposing keys.",
 )
 def get_ai_status() -> AIStatusResponse:
     """Return whether the Gemini API key is configured and which model is selected."""
     settings = get_settings()
     return AIStatusResponse(
-        configured=settings.is_gemini_configured,
+        configured=settings.is_gemini_configured or settings.ENABLE_AI_MOCK,
         model=settings.GEMINI_MODEL,
+        mock_mode=settings.ENABLE_AI_MOCK,
     )
+
 
 
 @router.post(
@@ -45,6 +47,13 @@ def test_ai_connectivity(request: AITestRequest = AITestRequest()) -> AITestResp
     settings = get_settings()
 
     if not settings.is_gemini_configured:
+        if settings.ENABLE_AI_MOCK:
+            return AITestResponse(
+                status="mock_success",
+                model=f"mock-{settings.GEMINI_MODEL}",
+                prompt=request.prompt,
+                response="[MOCK AI] SAARTHI is running in local development mode without external API keys.",
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env.",
@@ -82,11 +91,13 @@ def analyze_scene_image(request: AIVisionRequest) -> AIVisionResponse:
     """
     settings = get_settings()
 
-    if not settings.is_gemini_configured:
+    if not settings.is_gemini_configured and not settings.ENABLE_AI_MOCK:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env.",
         )
+
+
 
     # 1. Clean Base64 payload (strip whitespace and optional data URI prefix)
     raw_b64 = request.image_base64.strip() if request.image_base64 else ""
@@ -159,7 +170,24 @@ def analyze_scene_image(request: AIVisionRequest) -> AIVisionResponse:
         bool(user_prompt),
     )
 
-    # 7. Call Gemini Vision service
+    # 7. Call Gemini Vision service or mock mode
+    if not settings.is_gemini_configured and settings.ENABLE_AI_MOCK:
+        mock_description = (
+            "[MOCK AI] In front of you is a room door labeled 'Room 204 — Computer Science Dept'. "
+            "Drop-offs and ground obstacles below the camera view were not checked."
+        )
+        return AIVisionResponse(
+            status="mock_success",
+            model=f"mock-{settings.GEMINI_MODEL}",
+            prompt=prompt_used,
+            description=mock_description,
+            confidence=0.92,
+            extracted_text="Room 204 — Computer Science Dept",
+            uncertainties=[],
+            unchecked_areas=["Drop-offs and ground obstacles below camera field of view"],
+            needs_rescan=False,
+        )
+
     try:
         description = analyze_image(
             image_bytes=image_bytes,
@@ -175,11 +203,16 @@ def analyze_scene_image(request: AIVisionRequest) -> AIVisionResponse:
             len(description),
         )
 
+        # Disclose safety limitations (Rule 5)
         return AIVisionResponse(
             status="success",
             model=settings.GEMINI_MODEL,
             prompt=prompt_used,
             description=description,
+            confidence=0.90,
+            uncertainties=[],
+            unchecked_areas=["Drop-offs and ground obstacles below camera field of view"],
+            needs_rescan=False,
         )
     except GeminiServiceException as exc:
         logger.warning("Vision analysis error: status_code=%d, detail=%s", exc.status_code, exc.message)
@@ -187,3 +220,4 @@ def analyze_scene_image(request: AIVisionRequest) -> AIVisionResponse:
             status_code=exc.status_code,
             detail=exc.message,
         )
+

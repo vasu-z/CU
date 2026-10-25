@@ -190,6 +190,11 @@ class SpeechService {
     return false;
   }
 
+  public async repeat(): Promise<boolean> {
+    return this.repeatLast();
+  }
+
+
   /**
    * Retrieve the last spoken text.
    */

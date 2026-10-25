@@ -47,8 +47,10 @@
           "microphonePermission": "Allow SAARTHI to access your microphone to ask questions about your surroundings.",
           "speechRecognitionPermission": "Allow SAARTHI to recognize your speech to answer questions about what you see."
         }
-      ]
+      ],
+      "expo-mlkit-ocr"
     ],
+
     "extra": {
       "eas": {
         "projectId": "41f828c3-5ec5-49dd-86d3-417b73e7bfeb"

@@ -35,6 +35,9 @@ This document tracks all external code, libraries, and assets used in the **Saar
 | `@react-native-async-storage/async-storage` | MIT | On-device persistent key-value storage |
 | `react-native-safe-area-context` | MIT | Dynamic safe area handling for notch/island |
 | `@expo/vector-icons` | MIT | Accessible iconography |
+| `expo-mlkit-ocr` | MIT | On-device Google ML Kit Text Recognition v2 |
+| `jest` / `ts-jest` | MIT | Unit testing suite for deterministic application logic |
+
 
 ---
 

@@ -1,0 +1,309 @@
+{
+  "version": "1.0.0",
+  "campus_name": "Demonstration University Campus",
+  "is_sample_demo_data": true,
+  "disclaimer": "SAMPLE CAMPUS DATA FOR DEMONSTRATION AND TESTING ONLY. NEVER USE FOR REAL MOBILITY OR PHYSICAL NAVIGATION. MUST BE REPLACED WITH ACCREDITED CAMPUS ACCESSIBILITY SURVEY DATA.",
+  "nodes": [
+    {
+      "id": "entrance_main",
+      "label": "Turing Hall Main Entrance",
+      "type": "entrance",
+      "building": "Turing Hall",
+      "floor": 0,
+      "ocr_aliases": ["turing hall entrance", "main entrance", "turing entrance"],
+      "tactile_cue": "Double glass automatic sliding doors with tactile ground studs"
+    },
+    {
+      "id": "junction_lobby",
+      "label": "Ground Floor Central Lobby",
+      "type": "junction",
+      "building": "Turing Hall",
+      "floor": 0,
+      "ocr_aliases": ["central lobby", "information desk", "ground lobby"],
+      "tactile_cue": "Smooth terrazzo flooring with directional rubber tiles"
+    },
+    {
+      "id": "room_101",
+      "label": "Room 101 Lecture Hall",
+      "type": "room",
+      "building": "Turing Hall",
+      "floor": 0,
+      "ocr_aliases": ["room 101", "101", "lecture hall 101"],
+      "tactile_cue": "Heavy wooden double doors with braille plaque on right side"
+    },
+    {
+      "id": "elevator_gf",
+      "label": "Ground Floor Elevator",
+      "type": "elevator",
+      "building": "Turing Hall",
+      "floor": 0,
+      "ocr_aliases": ["elevator", "lift", "ground floor elevator"],
+      "tactile_cue": "Audible chime and raised braille call buttons on left door frame"
+    },
+    {
+      "id": "stairs_gf_1f",
+      "label": "Central Staircase Ground Floor",
+      "type": "stairs",
+      "building": "Turing Hall",
+      "floor": 0,
+      "ocr_aliases": ["staircase", "stairs to floor 1"],
+      "tactile_cue": "Metal handrail on right side with high-contrast step edges"
+    },
+    {
+      "id": "elevator_1f",
+      "label": "First Floor Elevator",
+      "type": "elevator",
+      "building": "Turing Hall",
+      "floor": 1,
+      "ocr_aliases": ["first floor elevator", "elevator floor 1", "lift 1f"],
+      "tactile_cue": "Audible chime outside elevator shaft"
+    },
+    {
+      "id": "stairs_1f",
+      "label": "Central Staircase First Floor Landing",
+      "type": "stairs",
+      "building": "Turing Hall",
+      "floor": 1,
+      "ocr_aliases": ["first floor stairs", "stair landing 1"],
+      "tactile_cue": "Textured warning mat 1 meter before top step"
+    },
+    {
+      "id": "junction_corridor_1f",
+      "label": "First Floor East Corridor Junction",
+      "type": "junction",
+      "building": "Turing Hall",
+      "floor": 1,
+      "ocr_aliases": ["east corridor", "corridor junction 1f"],
+      "tactile_cue": "Wall turns 90 degrees left with continuous baseboard guide"
+    },
+    {
+      "id": "room_204",
+      "label": "Room 204 Computer Science Lab",
+      "type": "room",
+      "building": "Turing Hall",
+      "floor": 1,
+      "ocr_aliases": ["room 204", "204", "cs lab 204", "computer science lab"],
+      "tactile_cue": "Metal door with braille sign at 1.4 meters on latch side"
+    },
+    {
+      "id": "landmark_library",
+      "label": "Campus Science Library Entrance",
+      "type": "landmark",
+      "building": "Turing Hall",
+      "floor": 1,
+      "ocr_aliases": ["library", "science library", "campus library"],
+      "tactile_cue": "Carpeted flooring begins at glass turnstiles"
+    },
+    {
+      "id": "room_isolated_tower",
+      "label": "North Observation Tower Room 500",
+      "type": "room",
+      "building": "North Tower",
+      "floor": 5,
+      "ocr_aliases": ["room 500", "observation tower"],
+      "tactile_cue": "Locked fire escape door"
+    }
+  ],
+  "edges": [
+    {
+      "from": "entrance_main",
+      "to": "junction_lobby",
+      "distance_meters": 12.0,
+      "bearing_degrees": 0.0,
+      "has_stairs": false,
+      "spoken_instruction": "Walk straight ahead 12 meters through the main doors into the central lobby.",
+      "tactile_guidance": "Follow the tactile paving studs along the center corridor.",
+      "hazards": ["Two-way automatic sliding doors"]
+    },
+    {
+      "from": "junction_lobby",
+      "to": "entrance_main",
+      "distance_meters": 12.0,
+      "bearing_degrees": 180.0,
+      "has_stairs": false,
+      "spoken_instruction": "Walk straight ahead 12 meters to exit through the main sliding doors.",
+      "tactile_guidance": "Tactile paving leads directly to the exit doors.",
+      "hazards": []
+    },
+    {
+      "from": "junction_lobby",
+      "to": "room_101",
+      "distance_meters": 15.0,
+      "bearing_degrees": 270.0,
+      "has_stairs": false,
+      "spoken_instruction": "Turn left and walk 15 meters down the west hall. Room 101 will be on your right.",
+      "tactile_guidance": "Keep left along the smooth wall until you reach the wooden double doors.",
+      "hazards": []
+    },
+    {
+      "from": "room_101",
+      "to": "junction_lobby",
+      "distance_meters": 15.0,
+      "bearing_degrees": 90.0,
+      "has_stairs": false,
+      "spoken_instruction": "Exit Room 101, turn right and walk 15 meters back to the central lobby.",
+      "tactile_guidance": "Follow the right wall back to the lobby opening.",
+      "hazards": []
+    },
+    {
+      "from": "junction_lobby",
+      "to": "elevator_gf",
+      "distance_meters": 8.0,
+      "bearing_degrees": 45.0,
+      "has_stairs": false,
+      "spoken_instruction": "Walk forward and slightly right 8 meters to reach the ground floor elevator.",
+      "tactile_guidance": "Braille button panel is on the left wall of the elevator frame.",
+      "hazards": []
+    },
+    {
+      "from": "elevator_gf",
+      "to": "junction_lobby",
+      "distance_meters": 8.0,
+      "bearing_degrees": 225.0,
+      "has_stairs": false,
+      "spoken_instruction": "Step out of the elevator and walk 8 meters straight ahead into the lobby.",
+      "tactile_guidance": "Terrazzo flooring opens into the lobby.",
+      "hazards": []
+    },
+    {
+      "from": "junction_lobby",
+      "to": "stairs_gf_1f",
+      "distance_meters": 10.0,
+      "bearing_degrees": 90.0,
+      "has_stairs": false,
+      "spoken_instruction": "Turn right and walk 10 meters to the central staircase.",
+      "tactile_guidance": "Handrail starts on your right.",
+      "hazards": ["Approaching flight of ascending stairs"]
+    },
+    {
+      "from": "stairs_gf_1f",
+      "to": "junction_lobby",
+      "distance_meters": 10.0,
+      "bearing_degrees": 270.0,
+      "has_stairs": false,
+      "spoken_instruction": "Step off the stairs, turn left and walk 10 meters into the lobby.",
+      "tactile_guidance": "Open terrazzo floor.",
+      "hazards": []
+    },
+    {
+      "from": "stairs_gf_1f",
+      "to": "stairs_1f",
+      "distance_meters": 18.0,
+      "bearing_degrees": 0.0,
+      "has_stairs": true,
+      "spoken_instruction": "Ascend 22 steps on the central staircase to the first floor landing.",
+      "tactile_guidance": "Hold the metal handrail on your right side. Steps have non-slip rubber nosing.",
+      "hazards": ["Stairs flight: 22 steps, intermediate landing at step 11"]
+    },
+    {
+      "from": "stairs_1f",
+      "to": "stairs_gf_1f",
+      "distance_meters": 18.0,
+      "bearing_degrees": 180.0,
+      "has_stairs": true,
+      "spoken_instruction": "Descend 22 steps on the central staircase to the ground floor.",
+      "tactile_guidance": "Hold the left handrail and watch step edges.",
+      "hazards": ["Descending flight of stairs"]
+    },
+    {
+      "from": "elevator_gf",
+      "to": "elevator_1f",
+      "distance_meters": 6.0,
+      "bearing_degrees": 0.0,
+      "has_stairs": false,
+      "spoken_instruction": "Take the elevator up to Floor 1. Audible voice announces floor arrival.",
+      "tactile_guidance": "Press button marked with raised number 1 and star braille symbol.",
+      "hazards": []
+    },
+    {
+      "from": "elevator_1f",
+      "to": "elevator_gf",
+      "distance_meters": 6.0,
+      "bearing_degrees": 0.0,
+      "has_stairs": false,
+      "spoken_instruction": "Take the elevator down to Ground Floor.",
+      "tactile_guidance": "Press button marked G.",
+      "hazards": []
+    },
+    {
+      "from": "elevator_1f",
+      "to": "junction_corridor_1f",
+      "distance_meters": 10.0,
+      "bearing_degrees": 90.0,
+      "has_stairs": false,
+      "spoken_instruction": "Exit the elevator, turn right and walk 10 meters to the east corridor junction.",
+      "tactile_guidance": "Follow the right wall guide rail.",
+      "hazards": []
+    },
+    {
+      "from": "junction_corridor_1f",
+      "to": "elevator_1f",
+      "distance_meters": 10.0,
+      "bearing_degrees": 270.0,
+      "has_stairs": false,
+      "spoken_instruction": "Walk 10 meters west along the corridor to the elevator entrance.",
+      "tactile_guidance": "Follow the left wall to the elevator call box.",
+      "hazards": []
+    },
+    {
+      "from": "stairs_1f",
+      "to": "junction_corridor_1f",
+      "distance_meters": 6.0,
+      "bearing_degrees": 90.0,
+      "has_stairs": false,
+      "spoken_instruction": "From the top of the stairs, walk 6 meters straight ahead to the east corridor junction.",
+      "tactile_guidance": "Transition from textured warning mat to smooth corridor flooring.",
+      "hazards": []
+    },
+    {
+      "from": "junction_corridor_1f",
+      "to": "stairs_1f",
+      "distance_meters": 6.0,
+      "bearing_degrees": 270.0,
+      "has_stairs": false,
+      "spoken_instruction": "Walk 6 meters west towards the central stairs landing.",
+      "tactile_guidance": "Stop when cane detects the rubber warning mat.",
+      "hazards": ["Descending stairs ahead"]
+    },
+    {
+      "from": "junction_corridor_1f",
+      "to": "room_204",
+      "distance_meters": 14.0,
+      "bearing_degrees": 0.0,
+      "has_stairs": false,
+      "spoken_instruction": "Turn left down the north wing and walk 14 meters. Room 204 Computer Science Lab is on your right.",
+      "tactile_guidance": "Follow the right wall. The door has a raised braille plate next to the handle.",
+      "hazards": []
+    },
+    {
+      "from": "room_204",
+      "to": "junction_corridor_1f",
+      "distance_meters": 14.0,
+      "bearing_degrees": 180.0,
+      "has_stairs": false,
+      "spoken_instruction": "Exit Room 204, turn left and walk 14 meters south back to the corridor junction.",
+      "tactile_guidance": "Follow the left wall to the main corridor opening.",
+      "hazards": []
+    },
+    {
+      "from": "junction_corridor_1f",
+      "to": "landmark_library",
+      "distance_meters": 22.0,
+      "bearing_degrees": 90.0,
+      "has_stairs": false,
+      "spoken_instruction": "Continue straight east 22 meters down the corridor to the Science Library entrance.",
+      "tactile_guidance": "Follow the continuous right wall until floor texture changes from tile to carpet.",
+      "hazards": ["Recessed fire extinguisher cabinet on left wall at 10 meters"]
+    },
+    {
+      "from": "landmark_library",
+      "to": "junction_corridor_1f",
+      "distance_meters": 22.0,
+      "bearing_degrees": 270.0,
+      "has_stairs": false,
+      "spoken_instruction": "Exit the library, walk west 22 meters back along the corridor to the junction.",
+      "tactile_guidance": "Carpet transitions back to smooth tile flooring.",
+      "hazards": []
+    }
+  ]
+}

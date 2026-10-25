@@ -22,9 +22,10 @@ class Settings(BaseSettings):
     ]
     CORS_ALLOW_CREDENTIALS: bool = False
 
-    # Gemini API configuration
+    # Gemini / Gemma API configuration
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-3.5-flash"
+    GEMINI_MODEL: str = "gemma-4-26b-a4b-it"
+    ENABLE_AI_MOCK: bool = False
 
     @property
     def is_gemini_configured(self) -> bool:

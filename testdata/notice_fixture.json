@@ -1,0 +1,14 @@
+{
+  "name": "sample_notice_board",
+  "category": "notice",
+  "ocr_text": "IMPORTANT NOTICE\nCS201 DATA STRUCTURES\nASSIGNMENT 2 SUBMISSION DEADLINE\n\nAll students must submit their graph search programming assignment online via Portal by:\nWednesday, October 28 at 5:00 PM\n\nLate submissions will receive a 10% penalty per day.",
+  "expected_structured": {
+    "reading_mode": "notice",
+    "notices": [
+      {
+        "title": "CS201 Assignment 2 Submission Deadline",
+        "raw_date_text": "Wednesday, October 28 at 5:00 PM"
+      }
+    ]
+  }
+}

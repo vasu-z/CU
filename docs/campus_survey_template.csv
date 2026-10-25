@@ -1,0 +1,36 @@
+# SAARTHI CAMPUS ACCESSIBILITY SURVEY TEMPLATE
+# Instructions:
+# 1. Fill in SECTION: NODES with all rooms, landmarks, doors, elevators, and stairs.
+# 2. Fill in SECTION: EDGES with verified physical connections, measuring distances with white-cane pacing or measuring wheel.
+# 3. Mark has_stairs as TRUE for any edge containing steps or elevation without ramps.
+# 4. Run `python scripts/csv_to_campus_graph.py docs/campus_survey_template.csv data/my_campus_graph.json` to generate your map.
+
+SECTION: NODES
+id,label,type,building,floor,ocr_aliases,tactile_cue
+entrance_main,Main Campus Gate,entrance,Main Building,0,"main gate;campus gate;entrance",Textured rubber curb ramp
+lobby_gf,Main Building Lobby,junction,Main Building,0,"lobby;reception",Directional floor grooving
+room_101,Lecture Hall 101,room,Main Building,0,"room 101;hall 101;101",Braille plate on right door jamb
+elevator_gf,Ground Floor Elevator,elevator,Main Building,0,"elevator;lift",Raised call button with star
+stairs_gf,Central Stairs Ground Floor,stairs,Main Building,0,"central stairs;stairs",Rubber tactile hazard tiles
+elevator_1f,First Floor Elevator,elevator,Main Building,1,"elevator 1st floor;lift 1f",Chime on arrival
+stairs_1f,First Floor Stairs Landing,stairs,Main Building,1,"stairs landing 1f",Textured mat 1m before steps
+room_201,Seminar Room 201,room,Main Building,1,"room 201;seminar 201",Braille plate on latch side
+
+SECTION: EDGES
+from,to,distance_meters,has_stairs,spoken_instruction,tactile_guidance,hazards
+entrance_main,lobby_gf,15.0,false,"Walk straight 15 meters through the main doors into the lobby.","Follow tactile paving guide.","Swinging glass door"
+lobby_gf,entrance_main,15.0,false,"Walk 15 meters to exit through the main doors.","Follow tactile paving guide.",""
+lobby_gf,room_101,20.0,false,"Turn left and walk 20 meters. Room 101 is on your right.","Follow left baseboard.",""
+room_101,lobby_gf,20.0,false,"Exit Room 101, turn right and walk 20 meters back to the lobby.","Follow right baseboard.",""
+lobby_gf,elevator_gf,10.0,false,"Walk 10 meters towards the east wall to reach the elevator.","Smooth tile floor.",""
+elevator_gf,lobby_gf,10.0,false,"Exit elevator and walk 10 meters into the lobby.","Smooth tile floor.",""
+lobby_gf,stairs_gf,12.0,false,"Walk 12 meters towards the stairs.","Stop when cane touches rubber hazard tiles.","Approaching stairs"
+stairs_gf,lobby_gf,12.0,false,"Exit stairs and walk 12 meters into the lobby.","Open floor.",""
+stairs_gf,stairs_1f,18.0,true,"Climb 20 steps to the first floor landing.","Hold right handrail.","Stairway flight"
+stairs_1f,stairs_gf,18.0,true,"Descend 20 steps to the ground floor.","Hold left handrail.","Descending stairs"
+elevator_gf,elevator_1f,6.0,false,"Take elevator to Floor 1.","Press button 1.",""
+elevator_1f,elevator_gf,6.0,false,"Take elevator down to Ground Floor.","Press button G.",""
+elevator_1f,room_201,16.0,false,"Exit elevator, turn right and walk 16 meters to Room 201.","Follow right wall guide.",""
+room_201,elevator_1f,16.0,false,"Exit Room 201, turn left and walk 16 meters back to elevator.","Follow left wall guide.",""
+stairs_1f,room_201,10.0,false,"From top of stairs, turn right and walk 10 meters to Room 201.","Follow right wall.",""
+room_201,stairs_1f,10.0,false,"Exit Room 201, walk 10 meters towards the central stairs.","Stop at rubber hazard mat.","Descending stairs ahead"

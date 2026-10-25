@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SaarthiCampusGraph",
+  "description": "Standardized schema for university campus accessible navigation graphs.",
+  "type": "object",
+  "required": ["version", "campus_name", "nodes", "edges"],
+  "properties": {
+    "version": { "type": "string" },
+    "campus_name": { "type": "string" },
+    "is_sample_demo_data": { "type": "boolean" },
+    "disclaimer": { "type": "string" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "type", "building", "floor"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["entrance", "room", "junction", "elevator", "stairs", "landmark", "restroom"]
+          },
+          "building": { "type": "string" },
+          "floor": { "type": "integer" },
+          "ocr_aliases": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tactile_cue": { "type": "string" }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "distance_meters", "has_stairs"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "distance_meters": { "type": "number", "minimum": 0 },
+          "bearing_degrees": { "type": "number", "minimum": 0, "maximum": 360 },
+          "has_stairs": { "type": "boolean" },
+          "spoken_instruction": { "type": "string" },
+          "tactile_guidance": { "type": "string" },
+          "hazards": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

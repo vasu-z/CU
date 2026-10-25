@@ -1,6 +1,59 @@
-# SAARTHI
+# SAARTHI — Campus Mode
 
-SAARTHI is an AI-powered visual navigation assistant designed to empower visually impaired users with real-time situational awareness and spatial guidance.
+SAARTHI is an AI navigation and reading assistant engineered for blind and low-vision university students. It operates hands-free and offline-first, providing:
+1. **Campus Reading Pipeline**: Reads timetables, door signs, room numbers, and noticeboards using on-device ML Kit OCR with Google Gemma 4 (`gemma-4-26b-a4b-it`) structuring.
+2. **Deterministic Schedule Intelligence**: Calculates "When is my next class?" and countdowns using strict application calendar code (never LLM guesses).
+3. **Campus Map & Accessible Routing**: Dijkstra shortest path router with an **avoid-stairs** option that refuses to invent accessible routes when only stairs exist.
+4. **4-Corner Tactile UI**: Four large inset corner controls with distinct haptic patterns (`expo-haptics`) designed to eliminate iOS/Android edge-gesture conflicts.
+5. **Fail-Safe & Audible**: Every failure speaks an immediate recovery message. Never claims "the path is clear".
+
+---
+
+## System Architecture
+
+```mermaid
+graph TD
+    subgraph Mobile Client [Mobile App - React Native & Expo SDK 57]
+        Camera[Camera Frame Capture]
+        CornerUI[4-Corner Tactile UI & Inset Controls]
+        VoiceCmd[Voice Intent Classifier]
+        LocalOCR[On-Device OCR Service]
+        DateMath[Deterministic Date/Time Engine]
+        Router[Accessible Campus Router - Dijkstra]
+        Localizer[Door Sign Localizer]
+        TTS[Text-to-Speech & Audible Recovery]
+    end
+
+    subgraph Backend [FastAPI Service]
+        API[FastAPI Gateway]
+        CampusRoute[/api/v1/campus/read]
+        AIRoute[/api/v1/ai/vision]
+        MockEngine[Offline Development Mock Engine]
+        GemmaService[Gemma 4 Client via Google GenAI]
+    end
+
+    subgraph CloudAI [Google Gemini API]
+        Gemma4[gemma-4-26b-a4b-it]
+    end
+
+    Camera --> LocalOCR
+    Camera --> AIRoute
+    CornerUI --> VoiceCmd
+    VoiceCmd --> Router
+    VoiceCmd --> DateMath
+    LocalOCR --> CampusRoute
+    CampusRoute --> GemmaService
+    AIRoute --> GemmaService
+    GemmaService --> Gemma4
+    GemmaService -.-> MockEngine
+    CampusRoute --> Localizer
+    CampusRoute --> DateMath
+    Router --> TTS
+    DateMath --> TTS
+    Localizer --> TTS
+```
+
+---
 
 ## Project Structure
 
@@ -8,51 +61,54 @@ SAARTHI is an AI-powered visual navigation assistant designed to empower visuall
 Saarthi/
 ├── backend/                     # FastAPI backend service
 │   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py              # FastAPI application initialization & middleware
-│   │   ├── core/
-│   │   │   ├── __init__.py
-│   │   │   └── config.py        # Environment-based configuration (pydantic-settings)
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   └── routes/
-│   │   │       ├── __init__.py  # Aggregated API router
-│   │   │       └── health.py    # Health check endpoint (/api/v1/health)
-│   │   │       └── ai.py        # AI status & connectivity test (/api/v1/ai/...)
+│   │   ├── main.py              # Application initialization & middleware
+│   │   ├── core/config.py       # Pydantic settings (Gemma 4 default, mock mode)
+│   │   ├── api/routes/
+│   │   │   ├── health.py        # Health check (/api/v1/health)
+│   │   │   ├── ai.py            # AI vision & status (/api/v1/ai/...)
+│   │   │   └── campus.py        # Campus reading (/api/v1/campus/read)
 │   │   ├── schemas/
-│   │   │   ├── __init__.py
-│   │   │   ├── health.py        # Pydantic schemas for health responses
-│   │   │   └── ai.py            # Pydantic schemas for AI status and test requests
-│   │   └── services/
-│   │       ├── __init__.py
-│   │       └── gemini.py        # Official google-genai SDK client & text generation
-│   ├── tests/
-│   │   ├── __init__.py
-│   │   ├── test_health.py       # Health endpoint & CORS test suite
-│   │   └── test_ai.py           # AI status, mocking, error handling & security tests
-│   ├── .env.example             # Safe template for environment configuration
-│   ├── .gitignore               # Backend gitignore rules
-│   └── requirements.txt         # Python dependencies
-├── mobile/                      # Mobile app (React Native + Expo SDK 57 + TypeScript)
-│   ├── assets/                  # App icons and splash assets
+│   │   │   ├── health.py
+│   │   │   ├── ai.py            # Confidence & safety disclosures
+│   │   │   └── campus.py        # Timetables, door signs, notices
+│   │   └── services/gemini.py   # Official Google GenAI SDK client
+│   ├── tests/                   # 41 passing automated tests
+│   ├── .env.example             # Template with Gemma 4 model
+│   └── requirements.txt
+├── mobile/                      # React Native + Expo SDK 57 mobile client
 │   ├── src/
-│   │   ├── api/
-│   │   │   └── client.ts        # Typed API client for FastAPI backend communication
-│   │   ├── config/
-│   │   │   └── env.ts           # Configurable backend base URL (LAN IP & presets)
-│   │   ├── theme/
-│   │   │   └── colors.ts        # High-contrast WCAG AAA accessibility color tokens
-│   │   └── components/
-│   │       ├── AccessibleButton.tsx # Min 56dp touch targets with VoiceOver/TalkBack labels
-│   │       └── StatusCard.tsx       # High-contrast system and AI status badges
-│   ├── App.tsx                  # Accessible starter screen for visual navigation
-│   ├── app.json                 # Expo app configuration (SDK 57)
-│   ├── package.json             # Expo SDK 57 dependencies (React Native 0.86, React 19.2)
-│   ├── tsconfig.json            # TypeScript strict configuration
-│   └── .gitignore               # Mobile gitignore rules
-├── .gitignore                   # Root repository gitignore
-└── README.md                    # Project documentation
+│   │   ├── api/client.ts        # Typed HTTP client with cancellation
+│   │   ├── components/
+│   │   │   └── CornerControls.tsx # Inset 4-corner tactile interface
+│   │   ├── navigation/
+│   │   │   ├── campusRouter.ts  # Dijkstra accessible router (avoid stairs)
+│   │   │   └── localization.ts  # OCR door sign snapping
+│   │   ├── services/
+│   │   │   ├── haptics.ts       # Distinct haptics per corner
+│   │   │   ├── ocr.ts           # On-device ML Kit OCR bridge
+│   │   │   ├── readingPipeline.ts # Campus reading coordinator
+│   │   │   ├── speech.ts        # Native TTS with repeat & stop
+│   │   │   └── voiceCommands.ts # Deterministic intent classifier
+│   │   ├── utils/
+│   │   │   └── dateTimeReasoning.ts # Deterministic "next class" engine
+│   │   └── data/
+│   │       └── sample_campus_graph.json # Sample campus map
+│   ├── App.tsx                  # Accessible main camera & voice assistant screen
+│   └── package.json             # Expo SDK 57 dependencies & Jest suite
+├── data/
+│   ├── campus_graph_schema.json # JSON Schema for campus map graphs
+│   └── sample_campus_graph.json # Verified demonstration campus layout
+├── docs/
+│   └── campus_survey_template.csv # Standardized survey template for mapping real campuses
+├── scripts/
+│   └── csv_to_campus_graph.py   # CLI tool to convert survey CSV into JSON graphs
+├── testdata/                    # 4 realistic test fixtures (timetable, sign, notice, noisy)
+├── AGENTS.md                    # Standing rules & safety constraints
+├── LICENSE                      # Apache-2.0
+├── THIRD_PARTY.md               # Audited third-party dependencies & licensing
+└── README.md
 ```
+
 
 ---
 
@@ -82,7 +138,8 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 # Open backend/.env and paste your GEMINI_API_KEY from Google AI Studio:
 # GEMINI_API_KEY="your-actual-api-key"
-# GEMINI_MODEL="gemini-3.5-flash"
+# GEMINI_MODEL="gemma-4-26b-a4b-it"
+# ENABLE_AI_MOCK="false" (or "true" for offline development without API key)
 
 # 6. Start the development server
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -183,24 +240,69 @@ npx expo start --tunnel
 
 ---
 
-## 5. Verification Commands
+## 5. Verification & Test Commands
 
-### Backend Tests (26 tests)
+### Backend Automated Test Suite (41 tests)
+
+The backend test suite verifies core configuration, health check endpoints, AI status/vision endpoints, offline mock modes, campus reading extraction, survey CSV-to-graph conversion, and end-to-end demo flows with test fixtures.
+
 ```powershell
 cd backend
-python -m pytest -v
+.\.venv\Scripts\Activate.ps1
+pytest -v
 ```
 
-### Mobile Health Check (Expo Doctor & TypeScript)
+**Results:**
+- `tests/test_config.py` (2 passed)
+- `tests/test_health.py` (4 passed)
+- `tests/test_ai.py` (8 passed)
+- `tests/test_campus_reading.py` (7 passed)
+- `tests/test_csv_to_campus_graph.py` (3 passed)
+- `tests/test_demo_flow.py` (4 passed)
+- **Total: 41 passed, 0 failed in ~2.8s**
+
+### Mobile Automated Test Suite (30 tests)
+
+The client unit test suite verifies deterministic calendar and next-class calculation, Dijkstra shortest path routing with strict stair-avoidance, unmapped node handling, and deterministic voice intent parsing.
+
 ```powershell
 cd mobile
-npx expo-doctor
+npm test
+```
+
+**Results:**
+- `src/utils/dateTimeReasoning.test.ts` (10 passed)
+- `src/navigation/campusRouter.test.ts` (12 passed)
+- `src/services/voiceCommands.test.ts` (8 passed)
+- **Total: 30 passed, 0 failed**
+
+### Mobile Type-Check & Health
+
+```powershell
+cd mobile
 npm run type-check
 ```
 
+**Results:**
+- `tsc --noEmit`: 0 errors
+
 ---
 
-## 6. License & Attribution
+## 6. Limitations & Safety Boundaries
+
+1. **Demonstration Campus Data**: The default graph in `data/sample_campus_graph.json` is **SAMPLE DEMONSTRATION DATA** intended for testing algorithms and user flows. It must never be represented as an actual surveyed map of a university campus. To map a real campus, use `docs/campus_survey_template.csv` and convert it with `python scripts/csv_to_campus_graph.py`.
+2. **Indoor Positioning Reality**: The app does **not** possess centimeter- or GPS-grade indoor positioning. Location is determined through door-sign OCR recognition (snapping to a verified graph node) or by asking the user to confirm a known landmark.
+3. **Hardware & Native Modules**:
+   - On-device Google ML Kit OCR (`expo-mlkit-ocr`) and native speech recognition require a native development build (`npx expo run:android` or `npx expo run:ios`).
+   - In standard Expo Go, the app automatically falls back to backend vision text extraction and on-screen tactile push-to-talk.
+4. **Assistive Safety Disclosures**:
+   - SAARTHI is an assistive navigation and reading aid. It is **not** a replacement for a white cane, guide dog, or formal orientation-and-mobility training.
+   - The app **never** announces *"the path is clear"* and never guarantees collision-free walking.
+   - All spatial descriptions explicitly state uninspected regions (such as low drop-offs, ground obstacles, or out-of-frame hazards).
+
+---
+
+## 7. License & Attribution
 
 - **License**: Apache-2.0. See [LICENSE](LICENSE) for full legal text.
 - **Dependency & Originality Auditing**: See [THIRD_PARTY.md](THIRD_PARTY.md) for audited third-party packages and license conformance.

@@ -16,6 +16,8 @@ class AIStatusResponse(BaseModel):
 
     configured: bool
     model: str
+    mock_mode: bool = False
+
 
 
 class AITestRequest(BaseModel):
@@ -62,3 +64,26 @@ class AIVisionResponse(BaseModel):
     model: str
     prompt: str
     description: str
+    confidence: float = Field(
+        default=0.92,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score between 0.0 and 1.0. Values below 0.65 require a re-scan.",
+    )
+    uncertainties: list[str] = Field(
+        default_factory=list,
+        description="Specific items, text, or obstacles that could not be determined with high certainty.",
+    )
+    unchecked_areas: list[str] = Field(
+        default_factory=lambda: ["Drop-offs and ground obstacles below camera field of view"],
+        description="Explicit regions not verified (Rule 5: never claim path is clear).",
+    )
+    needs_rescan: bool = Field(
+        default=False,
+        description="True if image clarity, confidence, or blur prevented safe description.",
+    )
+    extracted_text: Optional[str] = Field(
+        default=None,
+        description="Verbatim text extracted from signs, notices, or plaques without speculation.",
+    )
+

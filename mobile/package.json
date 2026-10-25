@@ -10,7 +10,9 @@
     "expo-dev-client": "~57.0.20",
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.4",
+    "expo-haptics": "~57.0.3",
     "expo-image-picker": "~57.0.20",
+    "expo-mlkit-ocr": "^0.2.7",
     "expo-speech": "~57.0.3",
     "expo-speech-recognition": "~57.1.1",
     "expo-status-bar": "~57.0.1",
@@ -19,12 +21,33 @@
     "react-native-safe-area-context": "~5.7.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.2.0",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.15",
     "typescript": "~6.0.3"
+  },
+  "description": "AI navigation and reading assistant for visually impaired university students",
+  "keywords": [
+    "hacktoberfest",
+    "accessibility",
+    "gemma",
+    "screen-reader",
+    "assistive-technology",
+    "blind-navigation",
+    "fastapi",
+    "react-native",
+    "expo"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LevionyxStudio/Saarthi.git"
   },
   "scripts": {
     "start": "expo start",
     "type-check": "tsc --noEmit",
+    "test": "jest",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"

@@ -16,8 +16,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Colors } from "./src/theme/colors";
 import { speechService } from "./src/services/speech";
 import { voiceRecognitionService } from "./src/services/voiceRecognition";
-import { analyzeSceneWithVision } from "./src/api/client";
-import { HomeControls } from "./src/components/HomeControls";
+import { hapticsService } from "./src/services/haptics";
+import { readingPipeline } from "./src/services/readingPipeline";
+import { parseVoiceCommand } from "./src/services/voiceCommands";
+import { analyzeSceneWithVision, readCampusText } from "./src/api/client";
+import { CampusRouter, CampusGraph, NavigationRoute } from "./src/navigation/campusRouter";
+import { CampusLocalizer } from "./src/navigation/localization";
+import { CornerControls } from "./src/components/CornerControls";
+import sampleCampusData from "./src/data/sample_campus_graph.json";
+
 
 export type AssistantState =
   | "idle"
@@ -33,33 +40,34 @@ export default function App() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
 
-  // Camera readiness tracking
+  // Camera readiness
   const [isCameraReady, setIsCameraReady] = useState(false);
   const isCameraReadyRef = useRef(false);
 
-  // Assistant State Machine
+  // State machine & Status displays
   const [assistantState, setAssistantState] = useState<AssistantState>("idle");
-  const [statusTitle, setStatusTitle] = useState("Ready");
+  const [statusTitle, setStatusTitle] = useState("SAARTHI Campus Mode");
   const [statusSubtitle, setStatusSubtitle] = useState(
-    "Point your camera at what you want to know about."
+    "Use corner controls or tap Talk to speak commands."
   );
 
-  // Concurrency, race-condition and cancellation management
+  // Campus navigation & localization state
+  const routerRef = useRef<CampusRouter>(new CampusRouter(sampleCampusData as unknown as CampusGraph));
+  const localizerRef = useRef<CampusLocalizer>(new CampusLocalizer(sampleCampusData as unknown as CampusGraph));
+  const [currentLocationId, setCurrentLocationId] = useState<string>("entrance_main");
+  const [activeRoute, setActiveRoute] = useState<NavigationRoute | null>(null);
+
+  // Request & cancellation management
   const isBusyRef = useRef<boolean>(false);
   const requestIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // --------------------------------------------------------------------------
-  // Camera Event Handlers
-  // --------------------------------------------------------------------------
   const handleCameraReady = useCallback(() => {
-    console.log("[SAARTHI Camera] onCameraReady event fired.");
     isCameraReadyRef.current = true;
     setIsCameraReady(true);
   }, []);
 
   const handleCameraMountError = useCallback((error: { message: string }) => {
-    console.error("[SAARTHI Camera] onMountError:", error.message);
     isCameraReadyRef.current = false;
     setIsCameraReady(false);
     setAssistantState("error");
@@ -67,105 +75,42 @@ export default function App() {
     setStatusSubtitle(`Camera failed to initialize: ${error.message}`);
   }, []);
 
-  // --------------------------------------------------------------------------
-  // Voice-first Onboarding Announcement (Exact Required Wording)
-  // --------------------------------------------------------------------------
+  // Voice onboarding
   useEffect(() => {
     async function playWelcome() {
       try {
         const played = await AsyncStorage.getItem(ONBOARDING_KEY);
         if (!played) {
           const welcome =
-            "Welcome to SAARTHI. To talk to me, tap the button in the bottom-right corner of the screen, then ask your question.";
+            "Welcome to SAARTHI Campus Mode. Fixed corner buttons: Top-left for Where am I, Top-right to Read Text, Bottom-left to Stop or Repeat, and Bottom-right to Talk.";
           await speechService.speak(welcome, { force: true });
           await AsyncStorage.setItem(ONBOARDING_KEY, "true");
         }
       } catch {
-        // Safe fallback
+        // Safe ignore
       }
     }
-
     playWelcome();
-    AccessibilityInfo.announceForAccessibility("SAARTHI visual assistant is ready.");
+    AccessibilityInfo.announceForAccessibility("SAARTHI Campus Assistant ready.");
   }, []);
 
-  // --------------------------------------------------------------------------
-  // Core Pipeline: Capture Camera Frame & Query Backend Gemini Vision
-  // --------------------------------------------------------------------------
-  const processQuestionAndCapture = async (
-    promptText: string,
-    isVoiceQuestion: boolean = true
-  ) => {
-    // Prevent overlapping capture and analysis
-    if (isBusyRef.current) {
-      console.log("[SAARTHI Pipeline] Analysis already in progress, ignoring call.");
-      return;
-    }
-
-    isBusyRef.current = true;
-    const currentRequestId = ++requestIdRef.current;
-
-    // Reset previous abort controller and create a new one for this request
-    abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    console.log(
-      `[SAARTHI Pipeline] Initiating pipeline (req #${currentRequestId}): isVoice=${isVoiceQuestion}, prompt="${promptText}"`
-    );
-
-    // 1. Transition state to "capturing"
-    setAssistantState("capturing");
-    setStatusTitle(isVoiceQuestion ? "Capturing..." : "Camera & Vision Test");
-    setStatusSubtitle(
-      isVoiceQuestion
-        ? `Question: "${promptText}"`
-        : "Capturing camera frame for scene description..."
-    );
-    AccessibilityInfo.announceForAccessibility(
-      isVoiceQuestion
-        ? "Capturing camera view."
-        : "Capturing camera frame for scene description test."
-    );
-
-    // Ensure camera readiness before capture
+  /**
+   * Helper to capture a photo frame safely with timeout and AbortController check.
+   */
+  const captureFrameBase64 = async (currentRequestId: number): Promise<{ base64: string; uri: string } | null> => {
     if (!isCameraReadyRef.current) {
-      console.log("[SAARTHI Camera] Waiting for onCameraReady before capture...");
       const waitStart = Date.now();
       while (!isCameraReadyRef.current && Date.now() - waitStart < 2500) {
-        if (requestIdRef.current !== currentRequestId) {
-          isBusyRef.current = false;
-          return;
-        }
+        if (requestIdRef.current !== currentRequestId) return null;
         await new Promise((res) => setTimeout(res, 100));
       }
-      console.log(`[SAARTHI Camera] Wait completed. isReady=${isCameraReadyRef.current}`);
     }
 
-    if (!cameraRef.current) {
-      if (requestIdRef.current !== currentRequestId) {
-        isBusyRef.current = false;
-        return;
-      }
-      setAssistantState("error");
-      const errMsg = "Camera is not ready. Please ensure camera access is granted.";
-      setStatusTitle("Camera Unavailable");
-      setStatusSubtitle(errMsg);
-      AccessibilityInfo.announceForAccessibility(errMsg);
-      speechService.speak(errMsg, { force: true });
-      isBusyRef.current = false;
-      return;
-    }
+    if (!cameraRef.current) return null;
 
-    let base64Image = "";
     try {
-      // 150ms buffer to stabilize native AVCaptureSession on iOS
-      await new Promise((res) => setTimeout(res, 150));
-
-      if (requestIdRef.current !== currentRequestId) {
-        isBusyRef.current = false;
-        return;
-      }
+      await new Promise((res) => setTimeout(res, 120));
+      if (requestIdRef.current !== currentRequestId) return null;
 
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.5,
@@ -173,318 +118,306 @@ export default function App() {
         skipProcessing: false,
       });
 
-      console.log(
-        `[SAARTHI Camera] Photo captured: width=${photo?.width}, height=${photo?.height}, hasBase64=${!!photo?.base64}, hasUri=${!!photo?.uri}`
-      );
+      if (!photo) return null;
 
-      if (photo?.base64) {
-        base64Image = photo.base64;
-      } else if (photo?.uri) {
-        console.log("[SAARTHI Camera] Reading base64 from file URI:", photo.uri);
-        base64Image = await FileSystem.readAsStringAsync(photo.uri, {
+      let base64 = photo.base64 || "";
+      if (!base64 && photo.uri) {
+        base64 = await FileSystem.readAsStringAsync(photo.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
       }
-    } catch (camErr: any) {
-      console.error("[SAARTHI Camera] takePictureAsync error:", camErr);
-    }
 
-    // Check if Stop was tapped while camera was capturing
-    if (requestIdRef.current !== currentRequestId) {
-      console.log("[SAARTHI] Interaction was cancelled during camera capture.");
-      isBusyRef.current = false;
-      return;
+      return { base64, uri: photo.uri };
+    } catch (err) {
+      console.warn("[SAARTHI Camera] Capture error:", err);
+      return null;
     }
+  };
 
-    if (!base64Image) {
+  /**
+   * CORNER 1 (TOP-LEFT): Where Am I / Localize via Door Plaque
+   */
+  const handleWhereAmI = async () => {
+    if (isBusyRef.current) return;
+    isBusyRef.current = true;
+    const currentRequestId = ++requestIdRef.current;
+
+    await speechService.stop();
+    setAssistantState("capturing");
+    setStatusTitle("Localizing...");
+    setStatusSubtitle("Reading nearby door plaques or signs...");
+    AccessibilityInfo.announceForAccessibility("Localizing position from door plaque.");
+
+    const photo = await captureFrameBase64(currentRequestId);
+    if (!photo || !photo.base64) {
       setAssistantState("error");
-      const errMsg =
-        "Unable to capture image from camera. Please ensure camera lens is unobstructed.";
-      setStatusTitle("Capture Failed");
-      setStatusSubtitle(errMsg);
-      AccessibilityInfo.announceForAccessibility(errMsg);
-      speechService.speak(errMsg, { force: true });
+      const err = "Could not capture image for localization. Please check camera lens.";
+      setStatusTitle("Localization Failed");
+      setStatusSubtitle(err);
+      await speechService.speak(err, { force: true });
       isBusyRef.current = false;
       return;
     }
 
-    // 2. Transition state to "thinking"
     setAssistantState("thinking");
-    setStatusTitle(isVoiceQuestion ? "Thinking..." : "Analyzing Scene...");
-    setStatusSubtitle(
-      isVoiceQuestion
-        ? "Consulting Gemini AI..."
-        : "Analyzing camera scene with Gemini AI..."
-    );
-    AccessibilityInfo.announceForAccessibility(
-      isVoiceQuestion ? "Consulting Gemini AI." : "Analyzing scene with Gemini AI."
-    );
+    setStatusSubtitle("Matching sign to campus map...");
 
     try {
-      const startTime = Date.now();
-      const visionResult = await analyzeSceneWithVision(
-        base64Image,
-        promptText,
-        "image/jpeg",
-        abortController.signal
-      );
-      const elapsed = Date.now() - startTime;
-      console.log(
-        `[SAARTHI Vision] Response received in ${elapsed}ms: "${visionResult.description}"`
-      );
-
-      // Check if Stop was tapped while Gemini was computing
-      if (requestIdRef.current !== currentRequestId) {
-        console.log("[SAARTHI] Discarding late AI response because interaction was cancelled.");
-        isBusyRef.current = false;
-        return;
-      }
-
-      const rawAnswer = visionResult.description?.trim();
-      if (!rawAnswer) {
-        throw new Error("Received an empty description from Gemini.");
-      }
-
-      // 3. Transition state to "speaking"
-      setAssistantState("speaking");
-      setStatusTitle("SAARTHI");
-      setStatusSubtitle(rawAnswer);
-      AccessibilityInfo.announceForAccessibility("Answer received.");
-
-      // Speak the real answer aloud using the text-to-speech service
-      await speechService.speak(rawAnswer, {
-        force: true,
-        onDone: () => {
-          if (requestIdRef.current === currentRequestId) {
-            console.log("[SAARTHI Speech] Speech finished. Returning to ready.");
-            setAssistantState("idle");
-            setStatusTitle("Ready");
-            setStatusSubtitle("Point your camera at what you want to know about.");
-            isBusyRef.current = false;
-          }
-        },
-        onError: (err) => {
-          console.warn("[SAARTHI Speech] Speech playback error:", err);
-          if (requestIdRef.current === currentRequestId) {
-            setAssistantState("idle");
-            isBusyRef.current = false;
-          }
-        },
+      const res = await readCampusText({
+        imageBase64: photo.base64,
+        readingMode: "sign",
       });
-    } catch (err: any) {
-      if (err.name === "AbortError" || requestIdRef.current !== currentRequestId) {
-        console.log("[SAARTHI Vision] Request cancelled by user.");
-        isBusyRef.current = false;
-        return;
+
+      if (requestIdRef.current !== currentRequestId) return;
+
+      const signText = res.door_sign?.room_number || res.source_text || "";
+      const locResult = localizerRef.current.localizeFromOcr(signText);
+
+      if (locResult.isLocalized && locResult.node) {
+        setCurrentLocationId(locResult.node.id);
+        setStatusTitle(locResult.node.label);
+        setStatusSubtitle(locResult.spokenMessage);
+        await speechService.speak(locResult.spokenMessage, { force: true });
+      } else {
+        const fallbackMsg =
+          locResult.spokenMessage ||
+          "I see text, but couldn't verify this room on the campus map. Starting from Main Entrance.";
+        setStatusTitle("Location Unverified");
+        setStatusSubtitle(fallbackMsg);
+        await speechService.speak(fallbackMsg, { force: true });
       }
 
+      setAssistantState("idle");
+    } catch (err: any) {
       setAssistantState("error");
-      const errMsg =
-        err?.message || "Failed to analyze scene. Please check your backend connection.";
-      console.error("[SAARTHI Vision] Error during analysis:", errMsg);
-      setStatusTitle("Analysis Failed");
-      setStatusSubtitle(errMsg);
-      AccessibilityInfo.announceForAccessibility(`Error: ${errMsg}`);
-      speechService.speak(`Analysis failed. ${errMsg}`, { force: true });
+      const errText = "Could not read door sign. " + (err?.message || "");
+      setStatusSubtitle(errText);
+      await speechService.speak(errText, { force: true });
+    } finally {
       isBusyRef.current = false;
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Primary Control: Stop
-  // --------------------------------------------------------------------------
+  /**
+   * CORNER 2 (TOP-RIGHT): Read Text / Notice / Timetable
+   */
+  const handleReadText = async () => {
+    if (isBusyRef.current) return;
+    isBusyRef.current = true;
+    const currentRequestId = ++requestIdRef.current;
+
+    await speechService.stop();
+    setAssistantState("capturing");
+    setStatusTitle("Reading Text...");
+    setStatusSubtitle("Scanning timetable, sign, or notice board...");
+    AccessibilityInfo.announceForAccessibility("Scanning text in view.");
+
+    const photo = await captureFrameBase64(currentRequestId);
+    if (!photo || !photo.base64) {
+      setAssistantState("error");
+      const err = "Camera capture failed. Please try again.";
+      setStatusTitle("Scan Failed");
+      setStatusSubtitle(err);
+      await speechService.speak(err, { force: true });
+      isBusyRef.current = false;
+      return;
+    }
+
+    setAssistantState("thinking");
+    setStatusSubtitle("Structuring campus information with Gemma 4...");
+
+    try {
+      const result = await readingPipeline.processCampusImage({
+        imageBase64: photo.base64,
+        imageUri: photo.uri,
+        readingMode: "auto",
+      });
+
+      if (requestIdRef.current !== currentRequestId) return;
+
+      setStatusTitle("Text Read");
+      setStatusSubtitle(result.spokenText);
+      setAssistantState("idle");
+    } catch (err: any) {
+      setAssistantState("error");
+      const errText = err?.message || "I couldn't read that clearly, please try again.";
+      setStatusSubtitle(errText);
+    } finally {
+      isBusyRef.current = false;
+    }
+  };
+
+  /**
+   * CORNER 3 (BOTTOM-LEFT): Stop (tap) & Repeat (long press)
+   */
   const handleStop = async () => {
-    console.log("[SAARTHI] Stop button tapped by user.");
-
-    // Check if there is an active interaction to stop
-    const isSpeaking = await speechService.isSpeakingAsync();
-    const hadActiveInteraction =
-      assistantState !== "idle" ||
-      isBusyRef.current ||
-      isSpeaking ||
-      voiceRecognitionService.getIsListening() ||
-      requestIdRef.current > 0;
-
-    requestIdRef.current = 0; // Invalidate all pending request identifiers
+    requestIdRef.current = 0;
     isBusyRef.current = false;
 
-    // Abort in-flight network request
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
 
-    // Cancel active listening and cut off speech playback immediately
     voiceRecognitionService.cancelListening();
     await speechService.stop();
 
-    setAssistantState("idle");
-    setStatusTitle("Ready");
-    setStatusSubtitle("Point your camera at what you want to know about.");
+    if (activeRoute) {
+      routerRef.current.cancelRoute();
+      setActiveRoute(null);
+    }
 
-    // Ensure Stop only announces "Stopped" when there was an active interaction to stop.
-    // When already idle, it should not start unnecessary speech.
-    if (hadActiveInteraction) {
-      AccessibilityInfo.announceForAccessibility("Assistance stopped.");
-      speechService.speak("Stopped.", { force: true });
+    setAssistantState("idle");
+    setStatusTitle("Stopped");
+    setStatusSubtitle("Assistance cancelled. Ready for your command.");
+    AccessibilityInfo.announceForAccessibility("Assistance stopped.");
+    await speechService.speak("Stopped.", { force: true });
+  };
+
+  const handleRepeat = async () => {
+    if (activeRoute) {
+      const stepMsg = routerRef.current.repeatCurrentInstruction();
+      setStatusSubtitle(stepMsg);
+      await speechService.speak(stepMsg, { force: true });
     } else {
-      console.log("[SAARTHI] App is already idle, no active interaction to stop.");
+      await speechService.repeat();
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Primary Control: Talk to SAARTHI (in bottom-right corner)
-  // --------------------------------------------------------------------------
+  /**
+   * Navigation handler for "Take me to <place>"
+   */
+  const handleNavigateTo = async (destinationQuery: string) => {
+    await speechService.stop();
+    setAssistantState("thinking");
+    setStatusTitle("Routing...");
+    setStatusSubtitle(`Finding accessible route to "${destinationQuery}"...`);
+
+    const route = routerRef.current.findRoute(currentLocationId, destinationQuery, {
+      avoidStairs: true,
+    });
+    setActiveRoute(route.status === "success" ? route : null);
+
+    setStatusTitle(route.status === "success" ? "Navigation Active" : "Route Notice");
+    setStatusSubtitle(route.spokenSummary);
+    AccessibilityInfo.announceForAccessibility(route.spokenSummary);
+    await speechService.speak(route.spokenSummary, { force: true });
+    setAssistantState("idle");
+  };
+
+  /**
+   * CORNER 4 (BOTTOM-RIGHT): Talk to Saarthi / Push-to-Talk
+   */
   const handleTalk = async () => {
-    // Prevent duplicate triggers if already busy
-    if (isBusyRef.current || assistantState === "listening") {
-      console.log("[SAARTHI] Talk tapped while busy, ignoring duplicate tap.");
-      return;
-    }
+    if (isBusyRef.current || assistantState === "listening") return;
 
-    console.log("[SAARTHI] Talk to SAARTHI tapped.");
-
-    // Cut off any active speech playback
     await speechService.stop();
 
-    // Check speech recognition capability
     const voiceStatus = voiceRecognitionService.checkAvailability();
     if (!voiceStatus.available) {
-      console.log("[SAARTHI Voice] Speech recognition unavailable:", voiceStatus.reason);
       setAssistantState("error");
-      setStatusTitle("Speech Recognition Unavailable");
-      setStatusSubtitle(
-        "Speech recognition requires an Expo development build (not supported in Expo Go). Tap 'Test Camera & Scene Description' below to test visual analysis."
-      );
-      AccessibilityInfo.announceForAccessibility(
-        "Speech recognition is not available in Expo Go. A development build is required."
-      );
-      // Give a clear spoken explanation and stop that interaction immediately
-      await speechService.speak(
-        "Speech recognition is not available in Expo Go. A development build is required for voice input.",
-        { force: true }
-      );
+      const msg =
+        "Voice speech recognition requires an Expo development build. Use corner buttons or fallback test buttons.";
+      setStatusTitle("Voice Input Unavailable");
+      setStatusSubtitle(msg);
+      await speechService.speak(msg, { force: true });
       return;
     }
 
-    // Verify camera permission
     if (!permission?.granted) {
       const res = await requestPermission();
       if (!res.granted) {
         setAssistantState("error");
-        const deniedMsg =
-          "Camera permission is required for SAARTHI to see your surroundings. Please enable it in Settings.";
-        setStatusTitle("Camera Access Needed");
-        setStatusSubtitle(deniedMsg);
-        AccessibilityInfo.announceForAccessibility(deniedMsg);
-        speechService.speak(deniedMsg, { force: true });
+        const denied = "Camera and microphone permissions are required.";
+        setStatusSubtitle(denied);
+        await speechService.speak(denied, { force: true });
         return;
       }
     }
 
-    // Speech recognition IS available (e.g. running in development build)
     setAssistantState("listening");
     setStatusTitle("Listening...");
-    setStatusSubtitle("Ask your question aloud now...");
-    AccessibilityInfo.announceForAccessibility("Listening. Ask your question now.");
-    speechService.speak("Listening.", { force: true });
+    setStatusSubtitle("Speak your question or destination now...");
+    await speechService.speak("Listening.", { force: true });
 
-    let hasError = false;
-    let finalQuestion = "";
+    let finalTranscript = "";
 
     await voiceRecognitionService.startListening({
-      onStart: () => {
-        setAssistantState("listening");
+      onStart: () => setAssistantState("listening"),
+      onResult: (res) => {
+        if (res.transcript) setStatusSubtitle(`Hearing: "${res.transcript}"`);
+        if (res.isFinal) finalTranscript = res.transcript.trim();
       },
-      onResult: (result) => {
-        if (result.transcript) {
-          setStatusSubtitle(`Hearing: "${result.transcript}"`);
-        }
-        if (result.isFinal) {
-          finalQuestion = result.transcript.trim();
-        }
-      },
-      onError: (err) => {
-        hasError = true;
-        console.warn("[SAARTHI Voice] Recognition error:", err);
+      onError: async (err) => {
         setAssistantState("error");
-        setStatusTitle("Speech Recognition Error");
+        setStatusTitle("Voice Error");
         setStatusSubtitle(err);
-        AccessibilityInfo.announceForAccessibility(`Voice error: ${err}`);
-        speechService.speak(`Voice recognition error: ${err}`, { force: true });
+        await speechService.speak(`Voice recognition error: ${err}`, { force: true });
       },
-      onEnd: () => {
-        if (hasError) {
-          console.log("[SAARTHI Voice] Recognition ended after error, skipping capture.");
-          return;
-        }
-        console.log(`[SAARTHI Voice] Recognition ended with text: "${finalQuestion}"`);
-        if (!finalQuestion || !finalQuestion.trim()) {
+      onEnd: async () => {
+        if (!finalTranscript) {
           setAssistantState("idle");
           setStatusTitle("Ready");
-          setStatusSubtitle("No question detected. Tap Talk to SAARTHI to try again.");
-          AccessibilityInfo.announceForAccessibility("No question detected.");
-          speechService.speak("No question was detected. Tap Talk to try again.", {
-            force: true,
-          });
+          setStatusSubtitle("No question detected. Tap Talk to try again.");
+          await speechService.speak("No question detected. Tap Talk to try again.", { force: true });
           return;
         }
 
-        // Proceed to capture and query AI with user's real spoken question
-        processQuestionAndCapture(finalQuestion, true);
+        const command = parseVoiceCommand(finalTranscript);
+        console.log(`[SAARTHI Intent] Parsed "${finalTranscript}" -> ${command.intent}`);
+
+        switch (command.intent) {
+          case "read_this":
+            handleReadText();
+            break;
+          case "where_am_i":
+            handleWhereAmI();
+            break;
+          case "next_class":
+            setStatusTitle("Timetable Query");
+            const classRes = await readingPipeline.queryNextClass();
+            setStatusSubtitle(classRes.spokenDescription);
+            setAssistantState("idle");
+            break;
+          case "navigate_to":
+            if (command.destinationQuery) {
+              handleNavigateTo(command.destinationQuery);
+            }
+            break;
+          case "what_is_ahead":
+            // Fall back to general visual description
+            setAssistantState("capturing");
+            const photo = await captureFrameBase64(++requestIdRef.current);
+            if (photo?.base64) {
+              setAssistantState("thinking");
+              const visRes = await analyzeSceneWithVision(photo.base64, "What is ahead in front of me?");
+              setStatusTitle("What Is Ahead");
+              setStatusSubtitle(visRes.description);
+              await speechService.speak(visRes.description, { force: true });
+              setAssistantState("idle");
+            }
+            break;
+          case "repeat":
+            handleRepeat();
+            break;
+          case "stop":
+            handleStop();
+            break;
+          case "unknown":
+          default:
+            setAssistantState("idle");
+            const unkMsg = `I heard "${finalTranscript}". You can ask: Read this, Where am I, Next class, What is ahead, or Take me to the library.`;
+            setStatusSubtitle(unkMsg);
+            await speechService.speak(unkMsg, { force: true });
+            break;
+        }
       },
     });
   };
-
-  // --------------------------------------------------------------------------
-  // Separately Labelled Fallback Control (for testing in Expo Go)
-  // --------------------------------------------------------------------------
-  const handleDirectCameraTest = () => {
-    console.log(
-      "[SAARTHI] Fallback control explicitly tapped: Test Camera & Scene Description"
-    );
-    processQuestionAndCapture(
-      "Describe what is in front of the camera clearly, noting immediate objects and visible obstacles.",
-      false
-    );
-  };
-
-  // --------------------------------------------------------------------------
-  // Determine Status Badge Color & Text
-  // --------------------------------------------------------------------------
-  const getStatusBadge = () => {
-    switch (assistantState) {
-      case "listening":
-        return { label: "LISTENING", dotColor: "#C084FC", bgColor: "rgba(192, 132, 252, 0.2)" };
-      case "capturing":
-        return { label: "CAPTURING", dotColor: "#38BDF8", bgColor: "rgba(56, 189, 248, 0.2)" };
-      case "thinking":
-        return { label: "THINKING", dotColor: "#A855F7", bgColor: "rgba(168, 85, 247, 0.2)" };
-      case "speaking":
-        return { label: "SPEAKING", dotColor: "#22C55E", bgColor: "rgba(34, 197, 94, 0.2)" };
-      case "error":
-        return { label: "ATTENTION", dotColor: "#F87171", bgColor: "rgba(248, 113, 113, 0.2)" };
-      case "idle":
-      default:
-        return {
-          label: isCameraReady ? "READY" : "STARTING",
-          dotColor: isCameraReady ? "#4ADE80" : "#FACC15",
-          bgColor: isCameraReady ? "rgba(74, 222, 128, 0.2)" : "rgba(250, 204, 21, 0.2)",
-        };
-    }
-  };
-
-  const badge = getStatusBadge();
-  const isBusy =
-    assistantState === "capturing" ||
-    assistantState === "thinking" ||
-    assistantState === "speaking";
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* ============================================================== */}
-      {/* 1. Main Area: Live Rear Camera Preview                         */}
-      {/* ============================================================== */}
+      {/* Camera Background */}
       {permission?.granted ? (
         <CameraView
           ref={cameraRef}
@@ -496,87 +429,38 @@ export default function App() {
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.permissionContainer]}>
-          <Text style={styles.permissionTitle} maxFontSizeMultiplier={2.0}>
-            Camera Inactive
+          <Text style={styles.permissionTitle}>Camera Access Required</Text>
+          <Text style={styles.permissionDescription}>
+            SAARTHI requires camera access to read campus signs and timetables.
           </Text>
-          <Text style={styles.permissionDescription} maxFontSizeMultiplier={1.8}>
-            {permission
-              ? "SAARTHI requires camera access to describe your surroundings and identify obstacles."
-              : "Checking camera permission..."}
-          </Text>
-          {permission && !permission.granted && (
-            <Pressable
-              onPress={requestPermission}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Enable Camera Access"
-              accessibilityHint="Prompts to allow camera permissions so SAARTHI can see."
-              style={({ pressed }) => [
-                styles.enableButton,
-                pressed && styles.enableButtonPressed,
-              ]}
-            >
-              <Text style={styles.enableButtonText} maxFontSizeMultiplier={1.8}>
-                Enable Camera Access
-              </Text>
-            </Pressable>
-          )}
+          <Pressable
+            onPress={requestPermission}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Grant Camera Permission"
+            style={styles.enableButton}
+          >
+            <Text style={styles.enableButtonText}>Enable Camera</Text>
+          </Pressable>
         </View>
       )}
 
-      {/* ============================================================== */}
-      {/* 2. Top Header: App Name & Unobtrusive Status Indicator         */}
-      {/* ============================================================== */}
-      <SafeAreaView style={styles.topSafeArea} edges={["top"]}>
+      {/* Top Header Bar */}
+      <SafeAreaView style={styles.topSafeArea} edges={["top"]} pointerEvents="box-none">
         <View style={styles.topHeader}>
-          <Text
-            style={styles.appName}
-            accessibilityRole="header"
-            maxFontSizeMultiplier={1.6}
-          >
+          <Text style={styles.appName} accessibilityRole="header">
             SAARTHI
           </Text>
-
-          {/* Small, unobtrusive status indicator */}
-          <View
-            style={[styles.statusBadge, { backgroundColor: badge.bgColor }]}
-            accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`Assistant status: ${badge.label}`}
-          >
-            <View
-              style={[styles.statusDot, { backgroundColor: badge.dotColor }]}
-            />
-            <Text
-              style={[styles.statusBadgeText, { color: badge.dotColor }]}
-              maxFontSizeMultiplier={1.4}
-            >
-              {badge.label}
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>
+              {assistantState.toUpperCase()}
             </Text>
           </View>
         </View>
       </SafeAreaView>
 
-      {/* ============================================================== */}
-      {/* 3. Main Area Overlay: Instructional Guidance                   */}
-      {/* ============================================================== */}
-      {assistantState === "idle" && (
-        <View style={styles.instructionContainer} pointerEvents="none">
-          <Text
-            style={styles.instructionText}
-            maxFontSizeMultiplier={1.8}
-            accessibilityRole="text"
-          >
-            Point your camera at what you want to know about.
-          </Text>
-        </View>
-      )}
-
-      {/* ============================================================== */}
-      {/* 4. Bottom Area: Status Message & Two Primary Controls          */}
-      {/* ============================================================== */}
-      <View style={styles.bottomOverlay}>
-        {/* Concise Status Message Card */}
+      {/* Center Status Card & Active Navigation Steps */}
+      <View style={styles.centerContainer} pointerEvents="box-none">
         <View
           style={styles.statusCard}
           accessible={true}
@@ -593,49 +477,41 @@ export default function App() {
           >
             {statusTitle}
           </Text>
-          <Text
-            style={styles.statusSubtitle}
-            maxFontSizeMultiplier={1.6}
-            numberOfLines={4}
-          >
+          <Text style={styles.statusSubtitle} maxFontSizeMultiplier={1.6} numberOfLines={5}>
             {statusSubtitle}
           </Text>
 
-          {/* Clearly Communicated Fallback Button (for Expo Go Testing) */}
-          {assistantState === "error" &&
-            statusTitle.includes("Speech Recognition") && (
-              <Pressable
-                onPress={handleDirectCameraTest}
-                accessible={true}
-                accessibilityRole="button"
-                accessibilityLabel="Test Camera & Scene Description"
-                accessibilityHint="Captures a photo and describes the scene with Gemini AI without requiring voice input."
-                style={({ pressed }) => [
-                  styles.testCaptureButton,
-                  pressed && styles.testCaptureButtonPressed,
-                ]}
-              >
-                <Text
-                  style={styles.testCaptureButtonText}
-                  maxFontSizeMultiplier={1.6}
-                >
-                  Test Camera & Scene Description
-                </Text>
-              </Pressable>
-            )}
+          {/* If navigation is active, provide Advance Step button */}
+          {activeRoute && (
+            <Pressable
+              onPress={() => {
+                const step = routerRef.current.advanceStep();
+                setStatusSubtitle(step.spokenMessage);
+                speechService.speak(step.spokenMessage, { force: true });
+                if (step.isFinished) setActiveRoute(null);
+              }}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Next Navigation Step"
+              style={styles.advanceStepButton}
+            >
+              <Text style={styles.advanceStepButtonText}>Next Step</Text>
+            </Pressable>
+          )}
         </View>
-
-        {/* Exactly TWO Primary Buttons: Stop (bottom-left) & Talk to SAARTHI (bottom-right) */}
-        <HomeControls
-          onStop={handleStop}
-          onTalk={handleTalk}
-          isProcessing={isBusy}
-          isListening={assistantState === "listening"}
-          talkLabel={
-            assistantState === "listening" ? "Listening..." : "Talk to SAARTHI"
-          }
-        />
       </View>
+
+      {/* 4 Fixed Corner Controls with Edge-Gesture Protection */}
+      <CornerControls
+        onWhereAmI={handleWhereAmI}
+        onReadText={handleReadText}
+        onStop={handleStop}
+        onRepeat={handleRepeat}
+        onTalk={handleTalk}
+        isListening={assistantState === "listening"}
+        isProcessing={assistantState === "capturing" || assistantState === "thinking"}
+        isSpeaking={assistantState === "speaking"}
+      />
     </View>
   );
 }
@@ -674,10 +550,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  enableButtonPressed: {
-    backgroundColor: Colors.talkButtonHover,
-    transform: [{ scale: 0.96 }],
-  },
   enableButtonText: {
     color: "#FFFFFF",
     fontSize: 17,
@@ -705,74 +577,46 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   statusBadgeText: {
+    color: "#4ADE80",
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     letterSpacing: 0.8,
   },
-  instructionContainer: {
+  centerContainer: {
     position: "absolute",
-    top: "35%",
-    left: 24,
-    right: 24,
+    top: "32%",
+    left: 20,
+    right: 20,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(8, 9, 13, 0.65)",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  instructionText: {
-    color: "#F8FAFC",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  bottomOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingBottom: Platform.OS === "ios" ? 16 : 24,
+    zIndex: 5,
   },
   statusCard: {
-    marginHorizontal: 20,
-    marginBottom: 8,
-    paddingVertical: 16,
+    width: "100%",
+    paddingVertical: 18,
     paddingHorizontal: 20,
-    backgroundColor: "rgba(18, 22, 33, 0.92)",
+    backgroundColor: "rgba(15, 23, 42, 0.94)",
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.5,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 8,
   },
   statusTitle: {
     color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 4,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 6,
   },
   statusTitleError: {
     color: "#F87171",
@@ -781,26 +625,23 @@ const styles = StyleSheet.create({
     color: "#C084FC",
   },
   statusSubtitle: {
-    color: "#CBD5E1",
+    color: "#E2E8F0",
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 22,
   },
-  testCaptureButton: {
-    marginTop: 12,
-    backgroundColor: Colors.talkButton,
+  advanceStepButton: {
+    marginTop: 14,
+    backgroundColor: "#0284C7",
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 48,
   },
-  testCaptureButtonPressed: {
-    backgroundColor: Colors.talkButtonHover,
-  },
-  testCaptureButtonText: {
+  advanceStepButtonText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
   },
 });

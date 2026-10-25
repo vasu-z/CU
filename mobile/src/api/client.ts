@@ -9,6 +9,7 @@ export interface HealthResponse {
 export interface AIStatusResponse {
   configured: boolean;
   model: string;
+  mock_mode?: boolean;
 }
 
 export interface AITestResponse {
@@ -23,6 +24,52 @@ export interface AIVisionResponse {
   model: string;
   prompt: string;
   description: string;
+  confidence?: number;
+  uncertainties?: string[];
+  unchecked_areas?: string[];
+  needs_rescan?: boolean;
+  extracted_text?: string;
+}
+
+export interface TimetableItem {
+  course_code: string;
+  course_name: string;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  building?: string;
+  confidence: number;
+}
+
+export interface DoorSignInfo {
+  room_number: string;
+  department?: string;
+  occupants: string[];
+  status?: string;
+  confidence: number;
+}
+
+export interface NoticeItem {
+  title: string;
+  raw_date_text?: string;
+  summary: string;
+  urgency: string;
+  confidence: number;
+}
+
+export interface CampusReadingResponse {
+  status: string;
+  reading_mode: string;
+  spoken_summary: string;
+  confidence: number;
+  needs_rescan: boolean;
+  source_text: string;
+  door_sign?: DoorSignInfo;
+  timetable_items: TimetableItem[];
+  notices: NoticeItem[];
+  uncertainties: string[];
+  unchecked_areas: string[];
 }
 
 export interface ApiError {
@@ -216,3 +263,50 @@ export async function analyzeSceneWithVision(
     throw new Error(error.message || "Failed to analyze image with Gemini Vision.");
   }
 }
+
+/**
+ * Send extracted OCR text or image to the campus reading endpoint (/api/v1/campus/read).
+ */
+export async function readCampusText(
+  params: {
+    imageBase64?: string;
+    ocrText?: string;
+    readingMode?: "auto" | "timetable" | "sign" | "notice" | "surroundings";
+  },
+  signal?: AbortSignal
+): Promise<CampusReadingResponse> {
+  const baseUrl = getBackendBaseUrl();
+  const url = `${baseUrl}/api/v1/campus/read`;
+
+  const payload = {
+    image_base64: params.imageBase64,
+    ocr_text: params.ocrText,
+    reading_mode: params.readingMode || "auto",
+  };
+
+  try {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      25000,
+      signal
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      const detail = data?.detail || `HTTP ${response.status}`;
+      throw new Error(detail);
+    }
+
+    return data as CampusReadingResponse;
+  } catch (error: any) {
+    if (error.name === "AbortError") {
+      throw error;
+    }
+    throw new Error(error.message || "Failed to read campus text.");
+  }
+}
+

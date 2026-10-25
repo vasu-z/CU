@@ -1,0 +1,13 @@
+{
+  "name": "sample_door_sign",
+  "category": "sign",
+  "ocr_text": "ROOM 204\nDEPARTMENT OF COMPUTER SCIENCE\nDR. ALAN TURING\nPROF. ADA LOVELACE\nOFFICE HOURS: MON/WED 2:00 PM - 4:00 PM",
+  "expected_structured": {
+    "reading_mode": "sign",
+    "door_sign": {
+      "room_number": "Room 204",
+      "department": "Department of Computer Science",
+      "occupants": ["Dr. Alan Turing", "Prof. Ada Lovelace"]
+    }
+  }
+}

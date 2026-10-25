@@ -451,3 +451,35 @@ def test_ai_vision_upstream_server_error(
     )
     assert response.status_code == 502
     assert "upstream server encountered an error" in response.json()["detail"].lower()
+
+
+def test_ai_mock_mode_when_unconfigured(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+    """When ENABLE_AI_MOCK is True and GEMINI_API_KEY is unset, endpoints return mock data with safety fields."""
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    monkeypatch.setenv("ENABLE_AI_MOCK", "True")
+    get_settings.cache_clear()
+
+    # 1. Status check reports mock configured
+    status_res = client.get("/api/v1/ai/status")
+    assert status_res.status_code == 200
+    assert status_res.json()["configured"] is True
+    assert status_res.json()["mock_mode"] is True
+
+    # 2. Text test endpoint returns mock response
+    test_res = client.post("/api/v1/ai/test", json={"prompt": "Hello"})
+    assert test_res.status_code == 200
+    assert test_res.json()["status"] == "mock_success"
+    assert "[MOCK AI]" in test_res.json()["response"]
+
+    # 3. Vision endpoint returns mock analysis with safety metadata
+    vision_res = client.post("/api/v1/ai/vision", json={"image_base64": VALID_JPEG_B64})
+    assert vision_res.status_code == 200
+    data = vision_res.json()
+    assert data["status"] == "mock_success"
+    assert "confidence" in data
+    assert data["confidence"] > 0.70
+    assert "unchecked_areas" in data
+    assert len(data["unchecked_areas"]) > 0
+    assert data["needs_rescan"] is False
+

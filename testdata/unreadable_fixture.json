@@ -1,0 +1,11 @@
+{
+  "name": "sample_unreadable_scan",
+  "category": "noisy",
+  "ocr_text": "??#",
+  "expected_structured": {
+    "status": "low_confidence",
+    "needs_rescan": true,
+    "confidence_max": 0.5,
+    "expected_spoken": "I couldn't read that clearly, please try again."
+  }
+}
