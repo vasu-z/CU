@@ -11,7 +11,7 @@ import {
   ScrollView,
   Switch,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as FileSystem from "expo-file-system";
@@ -51,7 +51,7 @@ export type AssistantState =
 const ONBOARDING_KEY = "@saarthi_welcome_played";
 const BACKEND_URL_KEY = "@saarthi_backend_url";
 
-export default function App() {
+export function SaarthiApp() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -957,7 +957,19 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <SafeAreaProvider style={styles.safeAreaRoot}>
+      <SaarthiApp />
+    </SafeAreaProvider>
+  );
+}
+
 const styles = StyleSheet.create({
+  safeAreaRoot: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
