@@ -32,6 +32,7 @@ This document tracks all external code, libraries, and assets used in the **Saar
 | `expo-camera` | MIT | Native camera view and frame capture |
 | `expo-speech` | MIT | Native Text-to-Speech (TTS) for audible responses |
 | `expo-speech-recognition` | MIT | Real-time on-device voice input transcription |
+| `expo-haptics` | MIT | Tactile feedback patterns for corner navigation and buttons |
 | `@react-native-async-storage/async-storage` | MIT | On-device persistent key-value storage |
 | `react-native-safe-area-context` | MIT | Dynamic safe area handling for notch/island |
 | `@expo/vector-icons` | MIT | Accessible iconography |

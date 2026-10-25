@@ -180,4 +180,43 @@ describe("CampusRouter & Localization — Accessible Navigation Tests", () => {
       expect(result.spokenMessage).toContain("could not read a clear room number");
     });
   });
+
+  describe("Destination Lookup & Step-by-Step Navigation", () => {
+    it("returns all non-junction destinations", () => {
+      const destinations = router.getAllDestinations();
+      expect(destinations.length).toBeGreaterThan(0);
+      expect(destinations.every((d) => d.type !== "junction")).toBe(true);
+      expect(destinations.some((d) => d.id === "room_204")).toBe(true);
+    });
+
+    it("searches destinations by query alias and room number", () => {
+      const libraryMatches = router.searchDestinations("library");
+      expect(libraryMatches.length).toBeGreaterThan(0);
+      expect(libraryMatches[0].label).toContain("Library");
+
+      const roomMatches = router.searchDestinations("204");
+      expect(roomMatches.length).toBeGreaterThan(0);
+      expect(roomMatches[0].id).toBe("room_204");
+    });
+
+    it("tracks currentStepIndex when advancing through route steps", () => {
+      const route = router.findRoute("entrance_main", "Room 204", { avoidStairs: true });
+      expect(route.status).toBe("success");
+      expect(router.getCurrentStepIndex()).toBe(0);
+
+      const firstStep = router.getCurrentStep();
+      expect(firstStep).not.toBeNull();
+      expect(firstStep?.stepIndex).toBe(1);
+
+      const repeated = router.repeatCurrentInstruction();
+      expect(repeated).toContain(firstStep?.spokenInstruction);
+
+      // Advance
+      const nextResult = router.advanceStep();
+      expect(nextResult.isFinished).toBe(false);
+      expect(router.getCurrentStepIndex()).toBe(1);
+      expect(route.currentStepIndex).toBe(1);
+    });
+  });
 });
+

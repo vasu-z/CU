@@ -21,17 +21,59 @@ export interface ReadingPipelineResult {
   spokenText: string;
   response: CampusReadingResponse;
   nextClass?: NextClassResult;
+  extractedTimetableEntries?: TimetableEntry[];
 }
 
 class ReadingPipeline {
   /**
-   * Save or update the student's personal timetable.
+   * Save or replace the student's personal timetable.
    */
   async saveTimetable(entries: TimetableEntry[]): Promise<void> {
     try {
       await AsyncStorage.setItem(TIMETABLE_STORAGE_KEY, JSON.stringify(entries));
     } catch (err) {
       console.warn("[SAARTHI ReadingPipeline] Failed to save timetable:", err);
+    }
+  }
+
+  /**
+   * Add a single new timetable entry.
+   */
+  async addTimetableEntry(entry: TimetableEntry): Promise<TimetableEntry[]> {
+    const current = await this.getStoredTimetable();
+    const updated = [...current, entry];
+    await this.saveTimetable(updated);
+    return updated;
+  }
+
+  /**
+   * Update an existing timetable entry by ID.
+   */
+  async updateTimetableEntry(entry: TimetableEntry): Promise<TimetableEntry[]> {
+    const current = await this.getStoredTimetable();
+    const updated = current.map((e) => (e.id === entry.id ? entry : e));
+    await this.saveTimetable(updated);
+    return updated;
+  }
+
+  /**
+   * Delete a timetable entry by ID.
+   */
+  async deleteTimetableEntry(id: string): Promise<TimetableEntry[]> {
+    const current = await this.getStoredTimetable();
+    const updated = current.filter((e) => e.id !== id);
+    await this.saveTimetable(updated);
+    return updated;
+  }
+
+  /**
+   * Clear all stored timetable entries.
+   */
+  async clearTimetable(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(TIMETABLE_STORAGE_KEY);
+    } catch (err) {
+      console.warn("[SAARTHI ReadingPipeline] Failed to clear timetable:", err);
     }
   }
 
@@ -51,7 +93,34 @@ class ReadingPipeline {
   }
 
   /**
+   * Convert raw backend TimetableItem[] to typed TimetableEntry[].
+   */
+  convertExtractedItemsToEntries(items: any[]): TimetableEntry[] {
+    const dayMap: Record<string, 0 | 1 | 2 | 3 | 4 | 5 | 6> = {
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
+    };
+
+    return items.map((item, idx) => ({
+      id: `extracted_${Date.now()}_${idx}`,
+      courseCode: (item.course_code || "CLASS").trim(),
+      courseName: (item.course_name || "Scheduled Class").trim(),
+      room: (item.room || "Unassigned").trim(),
+      building: item.building ? item.building.trim() : undefined,
+      dayOfWeek: dayMap[(item.day_of_week || "").toLowerCase().trim()] ?? 1,
+      startTime: item.start_time || "09:00",
+      endTime: item.end_time || "10:00",
+    }));
+  }
+
+  /**
    * Query "When is my next class?" using deterministic application code.
+   * If timetable is empty, speaks an honest prompt asking the user to add classes.
    */
   async queryNextClass(): Promise<NextClassResult> {
     const timetable = await this.getStoredTimetable();
@@ -65,7 +134,7 @@ class ReadingPipeline {
    * 1. Extract text locally with OCR if URI provided and native OCR supported.
    * 2. Send image or OCR text to Gemma 4 via /campus/read.
    * 3. Validate structured response.
-   * 4. If new timetable items detected, merge into student's stored schedule.
+   * 4. If timetable items detected, convert them for user confirmation (DO NOT silently overwrite).
    * 5. Speak result aloud (or audible retry if low confidence).
    */
   async processCampusImage(options: ReadingPipelineOptions): Promise<ReadingPipelineResult> {
@@ -107,32 +176,12 @@ class ReadingPipeline {
       spokenOutput = "I couldn't read that clearly, please try again.";
     }
 
-    // 4. If structured timetable items returned, persist them
+    // 4. If structured timetable items returned, format them for confirmation (never silently persist)
     let nextClassResult: NextClassResult | undefined = undefined;
+    let extractedTimetableEntries: TimetableEntry[] | undefined = undefined;
     if (response.timetable_items && response.timetable_items.length > 0) {
-      const dayMap: Record<string, 0 | 1 | 2 | 3 | 4 | 5 | 6> = {
-        sunday: 0,
-        monday: 1,
-        tuesday: 2,
-        wednesday: 3,
-        thursday: 4,
-        friday: 5,
-        saturday: 6,
-      };
-
-      const convertedEntries: TimetableEntry[] = response.timetable_items.map((item, idx) => ({
-        id: `extracted_${Date.now()}_${idx}`,
-        courseCode: item.course_code,
-        courseName: item.course_name,
-        room: item.room,
-        building: item.building,
-        dayOfWeek: dayMap[item.day_of_week.toLowerCase().trim()] ?? 1,
-        startTime: item.start_time,
-        endTime: item.end_time,
-      }));
-
-      await this.saveTimetable(convertedEntries);
-      nextClassResult = getNextClass(convertedEntries, new Date());
+      extractedTimetableEntries = this.convertExtractedItemsToEntries(response.timetable_items);
+      nextClassResult = getNextClass(extractedTimetableEntries, new Date());
     }
 
     // 5. Speak the result
@@ -142,6 +191,7 @@ class ReadingPipeline {
       spokenText: spokenOutput,
       response,
       nextClass: nextClassResult,
+      extractedTimetableEntries,
     };
   }
 }

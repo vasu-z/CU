@@ -79,6 +79,20 @@ export class HapticsService {
       // Safe fallback
     }
   }
+
+  /**
+   * Standard accessible button press feedback
+   */
+  async triggerButtonPress(): Promise<void> {
+    await this.triggerTopLeft();
+  }
+
+  /**
+   * Camera shutter / capture action feedback
+   */
+  async triggerCapture(): Promise<void> {
+    await this.triggerTopRight();
+  }
 }
 
 export const hapticsService = new HapticsService();

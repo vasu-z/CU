@@ -1,57 +1,64 @@
 /**
- * SAARTHI Design System — High Contrast & Dark Palette
+ * SAARTHI Design System — Restrained High-Contrast Accessible Palette
  *
- * Designed specifically for low-vision and blind accessibility (WCAG AAA compliant),
- * featuring deep charcoal surfaces, high-contrast text, vibrant semantic status indicators,
- * and prominent, easily tactile primary controls.
+ * Designed specifically for low-vision and blind university students:
+ * - Restrained light background (#F8FAFC) with dark, high-contrast text (#0F172A).
+ * - Single consistent authoritative accent color (Deep Navy Blue #1E3A8A).
+ * - High contrast ratios (>10:1) exceeding standard accessibility thresholds.
+ * - Meaningful semantic states (success, warning, error) with clear contrast.
  */
 export const Colors = {
-  // Deep charcoal / near-black backgrounds
-  background: "#08090D",
-  backgroundAlt: "#0E1117",
-  surface: "#121621",
-  surfaceElevated: "#181D2B",
-  surfaceTranslucent: "rgba(18, 22, 33, 0.88)",
-  overlayTranslucent: "rgba(8, 9, 13, 0.72)",
+  // Restrained clean light backgrounds
+  background: "#F8FAFC",
+  backgroundAlt: "#F1F5F9",
+  surface: "#FFFFFF",
+  surfaceElevated: "#F8FAFC",
+  surfaceTranslucent: "rgba(255, 255, 255, 0.96)",
+  overlayTranslucent: "rgba(15, 23, 42, 0.65)",
 
   // Borders & Dividers
-  border: "#2A3346",
-  borderLight: "rgba(255, 255, 255, 0.12)",
-  borderActive: "#8B5CF6",
+  border: "#E2E8F0",
+  borderLight: "#F1F5F9",
+  borderDark: "#94A3B8",
+  borderActive: "#1E3A8A",
 
   // High-contrast readable typography
-  textPrimary: "#FFFFFF",
-  textSecondary: "#E2E8F0",
-  textMuted: "#94A3B8",
-  textPlaceholder: "#64748B",
+  textPrimary: "#0F172A",      // Deep slate black (>13:1 contrast against white)
+  textSecondary: "#334155",    // Dark slate (>7:1 contrast)
+  textMuted: "#64748B",        // Accessible slate
+  textPlaceholder: "#94A3B8",
+  textInverse: "#FFFFFF",
 
-  // Primary Action Accents
-  talkButton: "#7C3AED",       // Rich violet/purple for Talk control
-  talkButtonHover: "#6D28D9",
-  talkButtonGlow: "rgba(139, 92, 246, 0.45)",
-  stopButton: "#DC2626",       // Crisp accessible red for Stop control
-  stopButtonHover: "#B91C1C",
-  stopButtonGlow: "rgba(220, 38, 38, 0.45)",
+  // Consistent Primary Action Accent: Deep Navy Blue
+  primary: "#1E3A8A",          // Authoritative, accessible deep navy
+  primaryHover: "#172554",
+  primaryLight: "#EFF6FF",
+  primaryText: "#FFFFFF",
 
-  // Accessibility & Diagnostics Accents
-  primary: "#38BDF8",          // Sky cyan for focused elements
-  primaryText: "#08090D",
-  accent: "#FACC15",           // Bright yellow
-  accentText: "#08090D",
+  // Secondary Accents & Controls
+  accent: "#1E3A8A",
+  accentText: "#FFFFFF",
+  talkButton: "#1E3A8A",       // Deep navy for voice control
+  talkButtonHover: "#172554",
+  talkButtonGlow: "rgba(30, 58, 138, 0.25)",
+  stopButton: "#991B1B",       // Crisp accessible deep red for Stop control
+  stopButtonHover: "#7F1D1D",
+  stopButtonGlow: "rgba(153, 27, 27, 0.25)",
 
   // Session & Semantic Status Indicators
-  statusActive: "#22C55E",     // Bright green for active session
-  statusActiveDot: "#4ADE80",
-  statusActiveBg: "rgba(34, 197, 94, 0.18)",
-  statusIdle: "#94A3B8",
-  statusThinking: "#8B5CF6",
-  statusThinkingBg: "rgba(139, 92, 246, 0.22)",
+  statusActive: "#15803D",     // Accessible forest green
+  statusActiveDot: "#16A34A",
+  statusActiveBg: "#DCFCE7",
+  statusIdle: "#64748B",
+  statusThinking: "#1E3A8A",
+  statusThinkingBg: "#EFF6FF",
 
   // Feedback states
-  success: "#4ADE80",
-  successBackground: "#064E3B",
-  error: "#F87171",
-  errorBackground: "#7F1D1D",
-  warning: "#FBBF24",
-  warningBackground: "#78350F",
+  success: "#15803D",
+  successBackground: "#F0FDF4",
+  error: "#B91C1C",
+  errorBackground: "#FEF2F2",
+  warning: "#B45309",
+  warningBackground: "#FFFBEB",
 } as const;
+

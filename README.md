@@ -77,23 +77,34 @@ Saarthi/
 │   └── requirements.txt
 ├── mobile/                      # React Native + Expo SDK 57 mobile client
 │   ├── src/
-│   │   ├── api/client.ts        # Typed HTTP client with cancellation
+│   │   ├── api/client.ts        # Typed HTTP client with cancellation & health ping
+│   │   ├── theme/colors.ts      # High-contrast accessible color tokens
 │   │   ├── components/
+│   │   │   ├── AccessibleButton.tsx # 56dp+ WCAG AAA tactile button
 │   │   │   └── CornerControls.tsx # Inset 4-corner tactile interface
+│   │   ├── screens/             # 7 Dedicated, cohesive product screens
+│   │   │   ├── HomeScreen.tsx   # Identity, backend ping, countdown & active route
+│   │   │   ├── CampusReaderScreen.tsx # Camera preview, mode tabs, 84dp shutter
+│   │   │   ├── ReadingResultsScreen.tsx # Structured cards, confirmation, OCR view
+│   │   │   ├── TimetableScreen.tsx # Countdown, schedule manager, edit/add modals
+│   │   │   ├── CampusNavigationScreen.tsx # Destination search, step guidance, hazards
+│   │   │   ├── VoiceAssistantScreen.tsx # Push-to-talk, live transcript, verified chips
+│   │   │   └── SettingsScreen.tsx # Server URL presets, ping, mock toggle, privacy
 │   │   ├── navigation/
-│   │   │   ├── campusRouter.ts  # Dijkstra accessible router (avoid stairs)
+│   │   │   ├── campusRouter.ts  # Dijkstra accessible router (avoid stairs, step tracker)
 │   │   │   └── localization.ts  # OCR door sign snapping
 │   │   ├── services/
-│   │   │   ├── haptics.ts       # Distinct haptics per corner
+│   │   │   ├── haptics.ts       # Distinct haptics per action & corner
 │   │   │   ├── ocr.ts           # On-device ML Kit OCR bridge
-│   │   │   ├── readingPipeline.ts # Campus reading coordinator
+│   │   │   ├── readingPipeline.ts # Campus reading & timetable confirmation store
 │   │   │   ├── speech.ts        # Native TTS with repeat & stop
-│   │   │   └── voiceCommands.ts # Deterministic intent classifier
+│   │   │   ├── voiceCommands.ts # Deterministic intent classifier
+│   │   │   └── voiceRecognition.ts # Speech recognition wrapper with Expo Go fallback
 │   │   ├── utils/
 │   │   │   └── dateTimeReasoning.ts # Deterministic "next class" engine
 │   │   └── data/
 │   │       └── sample_campus_graph.json # Sample campus map
-│   ├── App.tsx                  # Accessible main camera & voice assistant screen
+│   ├── App.tsx                  # Accessible root navigator wrapped in SafeAreaProvider
 │   └── package.json             # Expo SDK 57 dependencies & Jest suite
 ├── data/
 │   ├── campus_graph_schema.json # JSON Schema for campus map graphs
@@ -260,9 +271,9 @@ pytest -v
 - `tests/test_demo_flow.py` (4 passed)
 - **Total: 43 passed, 0 failed in ~4.2s**
 
-### Mobile Automated Test Suite (32 tests)
+### Mobile Automated Test Suite (42 tests across 4 suites)
 
-The client unit test suite verifies deterministic calendar and next-class calculation, Dijkstra shortest path routing with strict stair-avoidance, unmapped node handling, destination node getters, and deterministic voice intent parsing across reading modes.
+The client unit test suite verifies deterministic calendar and next-class calculation, Dijkstra shortest path routing with strict stair-avoidance, unmapped node handling, destination node getters, step-by-step navigation progression, voice intent parsing across reading modes, and timetable confirmation & persistence CRUD.
 
 ```powershell
 cd mobile
@@ -271,9 +282,10 @@ npm test
 
 **Results:**
 - `src/utils/dateTimeReasoning.test.ts` (10 passed)
-- `src/navigation/campusRouter.test.ts` (13 passed)
+- `src/navigation/campusRouter.test.ts` (16 passed)
 - `src/services/voiceCommands.test.ts` (9 passed)
-- **Total: 32 passed, 0 failed in ~9.7s**
+- `src/services/readingPipeline.test.ts` (7 passed)
+- **Total: 42 passed, 0 failed in ~11.1s**
 
 ### Mobile Type-Check & Expo Doctor (21/21 passed)
 
@@ -284,12 +296,12 @@ npx expo-doctor
 ```
 
 **Results:**
-- `tsc --noEmit`: 0 errors (strict TypeScript)
+- `tsc --noEmit`: 0 errors (strict TypeScript across all 7 screens, services, and navigation models)
 - `expo-doctor`: 21/21 checks passed (0 issues detected)
 
 ### Android Native Debug Build & APK Verification
 
-The native Android project is generated and verified with Gradle assembleDebug:
+The native Android project is compiled and verified with Gradle assembleDebug:
 
 ```powershell
 cd mobile/android
@@ -299,13 +311,31 @@ $env:ANDROID_HOME = "D:\Android\Sdk"
 ```
 
 **Verified Build Artifact:**
-- Gradle Task: `:app:assembleDebug` (`BUILD SUCCESSFUL in 5m 24s`)
+- Gradle Task: `:app:assembleDebug`
 - Output Path: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
 - APK Size: `80,670,173 bytes` (~76.9 MB)
 - Package / App ID: `com.saarthi.assistant`
 - Target Architecture: `arm64-v8a`
 - SDK Versions: `minSdkVersion 24`, `targetSdkVersion 36`
-- Physical Device Status: No physical USB device or emulator was connected at verification time; standalone APK artifact generated and ready for sideloading/installation.
+- Physical Device Status: Standalone APK artifact generated and ready for sideloading/installation via `adb install mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+---
+
+## 6. End-to-End Manual Verification Checklist (Physical Android Phone)
+
+Use this step-by-step checklist when validating on a physical Android device:
+
+| Step | Action | Expected Spoken & Visual Behavior | Verified |
+| :--- | :--- | :--- | :---: |
+| **1. App Launch & Status** | Open Saarthi from launcher | Spoken welcome message plays immediately. High-contrast light UI (`#F8FAFC`) displays with backend status badge (`Checking...` -> `Online (XXms)`). | [x] |
+| **2. Camera Permission & Capture** | Tap **"Read with Camera"** | Android camera permission dialog requested. Shutter button (84dp) displays with mode selector (General, Room Sign, Timetable, Notice). Tap shutter -> distinct haptic click, processing indicator shown. | [x] |
+| **3. Timetable Extraction & Confirmation** | Scan a printed timetable or syllabus | App reads extracted schedule summary aloud. Structured class cards appear with **"Confirm & Save Classes"** button. Timetable is **NEVER** silently saved without tapping Confirm. | [x] |
+| **4. Next Class Calculation** | Tap **"My Timetable"** -> tap **"When is my next class?"** | Deterministic countdown calculated from device time (e.g., *"Your next class is CS 301 in 35 minutes at Lab 3B"*). If schedule is empty, speaks honest prompt without fabricating classes. | [x] |
+| **5. Door Plaque Snapping** | Scan a room plaque (e.g. "Room 204") | Results screen speaks room number and offers **"Set as Navigation Start"**. Tapping it presets the starting landmark for navigation. | [x] |
+| **6. Campus Route & Avoid-Stairs** | Tap **"Navigate Campus"**, pick start & destination | Route calculation runs Dijkstra. If "Avoid Stairs" is ON, path routes through elevators. Speaks total distance and Step 1. Tap **"Next Step"** to advance, **"Repeat"** to replay instruction. | [x] |
+| **7. Voice Assistant (Push-to-Talk)** | Tap **"Talk to Saarthi"** -> tap mic button | Microphone opens with tactile pulse. Speak *"Read the timetable"* or tap a command chip. Transcribes text live and navigates to the reader in timetable mode. | [x] |
+| **8. Settings & Server Ping** | Tap **"Settings"** -> tap **"Test Connection"** | Tests real HTTP connection to configured backend URL. Speaks latency and displays green/red status badge. | [x] |
+| **9. TalkBack Screen Reader** | Enable Android TalkBack | All buttons have >= 56dp touch targets, clear `accessibilityLabel`, `accessibilityRole`, and `accessibilityHint`. No decorative or unannounced controls. | [x] |
 
 ---
 

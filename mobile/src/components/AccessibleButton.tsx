@@ -37,12 +37,12 @@ export const AccessibleButton: React.FC<AccessibleButtonProps> = ({
   const getBackgroundColor = (pressed: boolean) => {
     if (disabled) return Colors.surfaceElevated;
     if (variant === "accent") {
-      return pressed ? "#EAB308" : Colors.accent;
+      return pressed ? "#172554" : Colors.accent;
     }
     if (variant === "surface") {
-      return pressed ? "#334155" : Colors.surface;
+      return pressed ? Colors.backgroundAlt : Colors.surface;
     }
-    return pressed ? "#0284C7" : Colors.primary;
+    return pressed ? "#172554" : Colors.primary;
   };
 
   const getTextColor = () => {

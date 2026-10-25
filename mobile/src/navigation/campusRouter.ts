@@ -68,6 +68,7 @@ export interface NavigationRoute {
   usesStairs: boolean;
   spokenSummary: string;
   isDemoData: boolean;
+  currentStepIndex?: number;
 }
 
 export class CampusRouter {
@@ -161,9 +162,9 @@ export class CampusRouter {
   public findRoute(
     startNodeId: string,
     destinationQuery: string,
-    options: { avoidStairs?: boolean } = {}
+    options: { avoidStairs?: boolean } | boolean = {}
   ): NavigationRoute {
-    const avoidStairs = options.avoidStairs ?? true;
+    const avoidStairs = typeof options === "boolean" ? options : (options.avoidStairs ?? true);
     const isDemo = Boolean(this.graph?.is_sample_demo_data);
 
     if (!this.graph) {
@@ -360,6 +361,7 @@ export class CampusRouter {
       usesStairs,
       spokenSummary,
       isDemoData: isDemo,
+      currentStepIndex: 0,
     };
 
     this.activeRoute = route;
@@ -384,6 +386,7 @@ export class CampusRouter {
     }
 
     this.currentStepIndex += 1;
+    this.activeRoute.currentStepIndex = this.currentStepIndex;
     if (this.currentStepIndex >= this.activeRoute.steps.length) {
       const dest = this.activeRoute.destinationNode?.label || "your destination";
       this.cancelRoute();
@@ -439,5 +442,24 @@ export class CampusRouter {
     return this.graph.nodes.filter(
       (n) => n.type === "room" || n.type === "entrance" || n.type === "landmark" || n.type === "restroom"
     );
+  }
+
+  public getAllDestinations(): CampusNode[] {
+    return this.getNavigableDestinations();
+  }
+
+  public searchDestinations(query: string): CampusNode[] {
+    if (!this.graph || !query.trim()) return this.getNavigableDestinations();
+    const q = query.toLowerCase().trim();
+    return this.getNavigableDestinations().filter(
+      (n) =>
+        n.label.toLowerCase().includes(q) ||
+        n.id.toLowerCase().includes(q) ||
+        (n.ocr_aliases && n.ocr_aliases.some((a) => a.toLowerCase().includes(q)))
+    );
+  }
+
+  public getCurrentStepIndex(): number {
+    return this.currentStepIndex;
   }
 }
