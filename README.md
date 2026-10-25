@@ -197,3 +197,12 @@ cd mobile
 npx expo-doctor
 npm run type-check
 ```
+
+---
+
+## 6. License & Attribution
+
+- **License**: Apache-2.0. See [LICENSE](LICENSE) for full legal text.
+- **Dependency & Originality Auditing**: See [THIRD_PARTY.md](THIRD_PARTY.md) for audited third-party packages and license conformance.
+- **AI-Assisted Code Generation**: Parts of this codebase and test suites are developed with AI assistance (Google Antigravity / DeepMind). All AI-generated code is audited, verified with strict static typing, and covered by automated test suites in compliance with our safety-first standing rules.
+
