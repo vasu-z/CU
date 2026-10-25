@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "SAARTHI",
+    "slug": "saarthi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.saarthi.assistant",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow SAARTHI to access your camera to describe your surroundings and identify obstacles.",
+        "NSMicrophoneUsageDescription": "Allow SAARTHI to access your microphone to ask questions about your surroundings.",
+        "NSSpeechRecognitionUsageDescription": "Allow SAARTHI to recognize your speech to answer questions about what you see."
+      }
+    },
+    "android": {
+      "package": "com.saarthi.assistant",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SAARTHI to access your camera to describe your surroundings and identify obstacles."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow SAARTHI to access your microphone to ask questions about your surroundings.",
+          "speechRecognitionPermission": "Allow SAARTHI to recognize your speech to answer questions about what you see."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "41f828c3-5ec5-49dd-86d3-417b73e7bfeb"
+      }
+    },
+    "owner": "justnaman"
+  }
+}

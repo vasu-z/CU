@@ -1,0 +1,82 @@
+from functools import lru_cache
+import json
+import os
+from typing import Any, List, Optional
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables or .env file."""
+
+    PROJECT_NAME: str = "SAARTHI API"
+    VERSION: str = "0.1.0"
+    API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = "development"
+
+    # CORS configuration
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+    CORS_ALLOW_CREDENTIALS: bool = False
+
+    # Gemini API configuration
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-3.5-flash"
+
+    @property
+    def is_gemini_configured(self) -> bool:
+        """Check if a non-empty Gemini API key is configured."""
+        return bool(self.GEMINI_API_KEY and self.GEMINI_API_KEY.strip())
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: Any) -> List[str]:
+        if isinstance(value, str):
+            value = value.strip()
+            if value.startswith("[") and value.endswith("]"):
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed]
+                except json.JSONDecodeError:
+                    pass
+            # Comma-separated fallback
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [str(item).strip() for item in value]
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_gemini_key_fallback(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Fall back to GOOGLE_API_KEY if GEMINI_API_KEY is not provided
+            if not data.get("GEMINI_API_KEY"):
+                google_key = data.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+                if google_key:
+                    data["GEMINI_API_KEY"] = google_key
+        return data
+
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ORIGINS:
+            raise ValueError(
+                "Wildcard origin '*' cannot be used when CORS_ALLOW_CREDENTIALS is True."
+            )
+        return self
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Return a cached instance of the application settings."""
+    return Settings()
